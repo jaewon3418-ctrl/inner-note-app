@@ -1,0 +1,31 @@
+{
+  "name": "testapp",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~5.0.4",
+    "expo": "~53.0.0",
+    "expo-status-bar": "~2.0.0",
+    "lucide-react": "^0.460.0",
+    "nativewind": "^4.1.23",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "react-native": "0.79.5",
+    "react-native-web": "^0.20.0",
+    "expo-linear-gradient": "~14.1.5",
+    "@react-native-async-storage/async-storage": "2.1.2",
+    "expo-haptics": "~14.1.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.12",
+    "autoprefixer": "^10.4.21",
+    "babel-preset-expo": "~11.0.15",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17"
+  },
+  "private": true
+}

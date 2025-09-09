@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // 데이터 로드
 export const loadData = async () => {
     try {
-        const keys = ['emotionHistory', 'characterLevel', 'characterExp', 'characterHappiness', 'streak', 'lastRecordDateKey'];
+        const keys = ['emotionHistory', 'streak', 'lastRecordDateKey'];
         const values = await AsyncStorage.multiGet(keys);
         const result = {};
         
@@ -25,9 +25,6 @@ export const saveData = async (data) => {
     try {
         const saveArray = [
             ['emotionHistory', data.emotionHistory || '[]'],
-            ['characterLevel', (data.characterLevel || 1).toString()],
-            ['characterExp', (data.characterExp || 0).toString()],
-            ['characterHappiness', (data.characterHappiness || 50).toString()],
             ['streak', (data.streak || 0).toString()],
         ];
         await AsyncStorage.multiSet(saveArray);

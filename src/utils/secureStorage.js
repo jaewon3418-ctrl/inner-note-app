@@ -221,9 +221,6 @@ export async function deleteAllEncryptedData() {
         // 모든 저장된 데이터의 키 목록
         const keysToDelete = [
             'emotionHistory',
-            'characterLevel', 
-            'characterExp',
-            'characterHappiness',
             'streak',
             'dailyAnonymousCount',
             'lastDiaryDate',
@@ -251,17 +248,11 @@ export async function exportUserData() {
 
         // 모든 사용자 데이터 수집
         const emotionHistory = await loadEncryptedData('emotionHistory');
-        const characterLevel = await AsyncStorage.getItem('characterLevel');
-        const characterExp = await AsyncStorage.getItem('characterExp');
-        const characterHappiness = await AsyncStorage.getItem('characterHappiness');
         const streak = await AsyncStorage.getItem('streak');
         const language = await AsyncStorage.getItem('language');
 
         const exportData = {
             emotionHistory: emotionHistory || [],
-            characterLevel: parseInt(characterLevel) || 1,
-            characterExp: parseInt(characterExp) || 0,
-            characterHappiness: parseInt(characterHappiness) || 50,
             streak: parseInt(streak) || 0,
             language: language || 'ko',
             exportDate: new Date().toISOString(),

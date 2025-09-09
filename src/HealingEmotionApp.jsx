@@ -73,7 +73,7 @@ import SparseSample from './components/SparseSample';
 import CollapsibleText from './components/CollapsibleText';
 import EmotionWheel from './components/EmotionWheel';
 import FloatingActions from './components/FloatingActions';
-import EnhancedBearCharacter from './components/EnhancedBearCharacter';
+// EnhancedBearCharacter removed
 
 const { width, height } = Dimensions.get('window');
 
@@ -257,7 +257,7 @@ export default function App() {
     const [selectedFilter, setSelectedFilter] = useState('ALL'); // 내부적으로는 고정값 사용
     const [showToast, setShowToast] = useState({ show: false, message: '', type: 'success' });
     const [showNameModal, setShowNameModal] = useState(false);
-    const [tempCharacterName, setTempCharacterName] = useState('');
+    // tempCharacterName removed
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [backupPassword, setBackupPassword] = useState('');
     const [selectedBackground, setSelectedBackground] = useState('night-sky-meteor');
@@ -349,7 +349,7 @@ export default function App() {
     const translate = useMemo(() => t(translations, language), [language]);
 
     // 캐릭터 카드 애니메이션 스타일 메모이즈 (리렌더 방지)
-    const characterCardStyle = useMemo(() => ({ opacity: cardFadeAnim }), [cardFadeAnim]);
+    // characterCardStyle removed
     
     // 맥락적 명언
     const todayQuote = getContextualQuote(
@@ -511,8 +511,6 @@ export default function App() {
             
             // 4) 메모리 상태 초기화
             setEmotionHistory([]);
-            setCharacterExp(0);
-            setCharacterHappiness(50);
             setStreak(0);
             setAppLockEnabled(false);
             setCompletedActivities({}); // 완료된 활동들도 초기화
@@ -896,30 +894,7 @@ export default function App() {
     };
 
     // 캐릭터 이름 변경 함수
-    const handleCharacterNameChange = async () => {
-        const newName = tempCharacterName.trim();
-        
-        if (!newName || newName.length < 2 || newName.length > 8) {
-            Alert.alert('이름 규칙', '이름은 2-8글자로 입력해주세요.');
-            return;
-        }
-        
-        const validPattern = /^[가-힣a-zA-Z0-9\s]+$/;
-        if (!validPattern.test(newName)) {
-            Alert.alert('이름 규칙', '한글, 영문, 숫자만 사용 가능합니다.');
-            return;
-        }
-
-        try {
-            await AsyncStorage.setItem('characterName', newName);
-            setCharacterName(newName);
-            setShowNameModal(false);
-            showToastMessage(`이름이 ${newName}(으)로 변경되었어요! 🐻`);
-            hapticSuccess();
-        } catch (error) {
-            Alert.alert('오류', '이름 변경 중 오류가 발생했습니다.');
-        }
-    };
+    // handleCharacterNameChange removed
 
     // 감정 제출 (개선됨)
     // 안전한 URL 열기
@@ -1567,38 +1542,7 @@ export default function App() {
     }, [emotionHistory]);
 
     // 곰 캐릭터 컴포넌트(타이핑 시 리렌더 방지)
-    const ImprovedCharacter = memo(function ImprovedCharacter({ size = 120, level }) {
-        const bearMood = getBearMood();
-        
-        return (
-            <View 
-                style={styles.characterWrapper}>
-                <LottieView
-                    source={require('../assets/animations/otro_oso_cropped.json')}
-                    autoPlay
-                    loop
-                    style={{
-                        width: size,
-                        height: size * 0.6, // 잘린 비율에 맞춰 높이 조정
-                        opacity: bearMood === 'concerned' ? 0.85 : 1
-                    }}
-                />
-                
-                {/* concerned 상태일 때 땀방울 오버레이 */}
-                {bearMood === 'concerned' && (
-                    <Text style={styles.sweatDrop}>💧</Text>
-                )}
-
-                {/* 레벨 배지 */}
-                <LinearGradient
-                    colors={['#FFD700', '#FFA500']}
-                    style={styles.levelBadge}
-                >
-                    <Text style={styles.levelText}>{level}</Text>
-                </LinearGradient>
-            </View>
-        );
-    });
+    // ImprovedCharacter component removed
 
 
 
@@ -2888,7 +2832,7 @@ export default function App() {
                                 
                                 <View style={styles.nameModalBody}>
                                     <Text style={styles.nameModalSubtitle}>
-                                        {translate('currentName')} {characterName}
+                                        캐릭터 이름 기능이 제거되었습니다
                                     </Text>
                                     <Text style={styles.nameModalSubtitle}>
                                         {translate('newNamePrompt')}
@@ -3767,21 +3711,6 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '800',
         color: '#fff',
-    },
-    characterName: {
-        fontSize: 24,
-        fontWeight: '600',
-        color: '#ffffff',
-        marginBottom: 8,
-        letterSpacing: 0.5,
-        fontFamily: Platform.select({
-            ios: 'Avenir-Heavy',
-            android: 'serif',
-            web: 'Georgia, serif'
-        }),
-        textShadowColor: 'rgba(255, 255, 255, 0.3)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 3,
     },
     characterStatus: {
         fontSize: 18,

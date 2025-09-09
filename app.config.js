@@ -14,7 +14,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.wodnjs3418.TestApp",
-      buildNumber: "20",
+      buildNumber: "22",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         NSFaceIDUsageDescription: "감정 기록에 안전하게 접근하기 위해 Face ID를 사용합니다.",

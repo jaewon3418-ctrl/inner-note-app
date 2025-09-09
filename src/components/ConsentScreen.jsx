@@ -14,7 +14,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { hapticSuccess, safeHapticImpact } from '../utils/safeHaptics';
 
-const ConsentScreen = ({ onConsentGranted, language = 'ko' }) => {
+const ConsentScreen = ({ onConsentGranted, onLanguageChange, language: initialLanguage = 'ko' }) => {
+    const [language, setLanguage] = useState(initialLanguage);
     const [agreedItems, setAgreedItems] = useState({
         dataCollection: false,
         thirdPartySharing: false,
@@ -84,6 +85,18 @@ const ConsentScreen = ({ onConsentGranted, language = 'ko' }) => {
         exit: 'Exit App',
     };
 
+    const toggleLanguage = async () => {
+        const newLanguage = language === 'ko' ? 'en' : 'ko';
+        setLanguage(newLanguage);
+        // 언어 설정을 저장
+        await AsyncStorage.setItem('selectedLanguage', newLanguage);
+        // 부모 컴포넌트에 언어 변경 알림
+        if (onLanguageChange) {
+            onLanguageChange(newLanguage);
+        }
+        safeHapticImpact('Light');
+    };
+
     const toggleAgreement = (key) => {
         setAgreedItems(prev => ({
             ...prev,
@@ -146,22 +159,31 @@ const ConsentScreen = ({ onConsentGranted, language = 'ko' }) => {
 
     const ConsentItem = memo(({ title, description, agreed, onToggle, important = false }) => (
         <View style={[styles.consentItem, important && styles.importantItem]}>
-            <TouchableOpacity onPress={onToggle} style={styles.consentHeader}>
-                <View style={styles.consentTitleRow}>
-                    <Text style={[styles.consentTitle, important && styles.importantTitle]}>
-                        {title}
-                    </Text>
-                    <View style={[styles.checkbox, agreed && styles.checkboxChecked]}>
-                        {agreed && <Ionicons name="checkmark" size={16} color="#fff" />}
-                    </View>
+            <TouchableOpacity 
+                onPress={onToggle} 
+                style={styles.consentHeader}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Text style={[styles.consentTitle, important && styles.importantTitle]}>
+                    {title}
+                </Text>
+                <Text style={styles.consentDescription}>{description}</Text>
+                <View style={[styles.checkbox, agreed && styles.checkboxChecked]}>
+                    {agreed && <Ionicons name="checkmark" size={16} color="#fff" />}
                 </View>
             </TouchableOpacity>
-            <Text style={styles.consentDescription}>{description}</Text>
         </View>
     ));
 
     const ConsentHeader = memo(() => (
         <View style={styles.header}>
+            <TouchableOpacity 
+                onPress={toggleLanguage} 
+                style={styles.languageButton}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Text style={styles.languageText}>{language === 'ko' ? 'EN' : 'KO'}</Text>
+            </TouchableOpacity>
             <Text style={styles.title}>{t.title}</Text>
             <Text style={styles.subtitle}>{t.subtitle}</Text>
         </View>
@@ -174,7 +196,13 @@ const ConsentScreen = ({ onConsentGranted, language = 'ko' }) => {
                 colors={['#1e293b', '#0f172a']}
                 style={styles.background}
             >
-                <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+                <ScrollView 
+                    style={styles.content} 
+                    contentContainerStyle={{ flexGrow: 1, paddingBottom: 50 }}
+                    showsVerticalScrollIndicator={false}
+                    bounces={true}
+                    scrollEnabled={true}
+                    keyboardShouldPersistTaps="handled">
                     <ConsentHeader />
 
                     <ConsentItem
@@ -206,8 +234,18 @@ const ConsentScreen = ({ onConsentGranted, language = 'ko' }) => {
                         onToggle={() => toggleAgreement('userRights')}
                     />
 
-                    <TouchableOpacity style={styles.agreeAllButton} onPress={agreeToAll}>
-                        <Text style={styles.agreeAllText}>{t.allAgreeButton}</Text>
+                    <TouchableOpacity 
+                        style={styles.agreeAllButton} 
+                        onPress={agreeToAll}
+                        activeOpacity={0.8}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                        <LinearGradient
+                            colors={['#667eea', '#764ba2']}
+                            style={styles.agreeAllGradient}
+                        >
+                            <Ionicons name="checkmark-circle" size={20} color="#fff" style={styles.agreeAllIcon} />
+                            <Text style={styles.agreeAllText}>{t.allAgreeButton}</Text>
+                        </LinearGradient>
                     </TouchableOpacity>
 
                     <View style={styles.buttonContainer}>
@@ -248,19 +286,44 @@ const styles = {
     content: {
         flex: 1,
         padding: 20,
+        paddingBottom: 100,
     },
     header: {
         marginTop: Platform.OS === 'ios' ? 20 : 40,
         marginBottom: 30,
         alignItems: 'center',
+        position: 'relative',
+    },
+    languageButton: {
+        backgroundColor: '#4a5568',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        borderWidth: 2,
+        borderColor: 'rgba(255, 255, 255, 0.5)',
+        minWidth: 50,
+        alignItems: 'center',
+        justifyContent: 'center',
+        position: 'absolute',
+        top: -30,
+        right: 0,
+        zIndex: 10,
+        elevation: 10,
+    },
+    languageText: {
+        color: '#ffffff',
+        fontSize: 16,
+        fontWeight: '700',
+        textAlign: 'center',
     },
     title: {
-        fontSize: 24,
+        fontSize: 28,
         fontWeight: '800',
         color: '#ffffff',
         textAlign: 'center',
-        marginBottom: 12,
         letterSpacing: -0.5,
+        marginTop: 20,
+        marginBottom: 10,
     },
     subtitle: {
         fontSize: 16,
@@ -269,7 +332,7 @@ const styles = {
         lineHeight: 22,
     },
     consentItem: {
-        backgroundColor: 'rgba(51, 65, 85, 0.8)',
+        backgroundColor: '#334155',
         borderRadius: 16,
         padding: 20,
         marginBottom: 16,
@@ -282,22 +345,18 @@ const styles = {
     importantItem: {
         borderWidth: 2,
         borderColor: '#EF4444',
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        backgroundColor: '#4a2d2d',
     },
     consentHeader: {
-        marginBottom: 12,
-    },
-    consentTitleRow: {
-        flexDirection: 'row',
+        padding: 5,
         alignItems: 'center',
-        justifyContent: 'space-between',
     },
     consentTitle: {
         fontSize: 16,
         fontWeight: '700',
         color: '#ffffff',
-        flex: 1,
-        marginRight: 12,
+        textAlign: 'center',
+        marginBottom: 8,
     },
     importantTitle: {
         color: '#EF4444',
@@ -306,15 +365,18 @@ const styles = {
         fontSize: 14,
         color: 'rgba(255, 255, 255, 0.8)',
         lineHeight: 20,
+        textAlign: 'center',
+        marginBottom: 16,
     },
     checkbox: {
-        width: 24,
-        height: 24,
+        width: 28,
+        height: 28,
         borderRadius: 4,
         borderWidth: 2,
         borderColor: 'rgba(255, 255, 255, 0.4)',
         alignItems: 'center',
         justifyContent: 'center',
+        marginLeft: 10,
         // 안드로이드에서만 중첩 방지를 위한 미세 조정
         ...(Platform.OS === 'android' && {
             borderWidth: 1.5,
@@ -326,27 +388,36 @@ const styles = {
         borderColor: '#667eea',
     },
     agreeAllButton: {
-        backgroundColor: 'rgba(102, 126, 234, 0.2)',
-        borderRadius: 12,
-        padding: 16,
+        borderRadius: 16,
+        marginBottom: 12,
+        shadowColor: '#667eea',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8,
+        overflow: 'hidden',
+    },
+    agreeAllGradient: {
+        flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: '#667eea',
-        // 안드로이드에서 중첩 방지를 위한 미세 조정
-        ...(Platform.OS === 'android' && {
-            borderWidth: 0.8,
-            borderColor: 'rgba(102, 126, 234, 0.6)',
-        }),
+        justifyContent: 'center',
+        paddingVertical: 16,
+        paddingHorizontal: 20,
+        gap: 8,
+    },
+    agreeAllIcon: {
+        marginRight: 4,
     },
     agreeAllText: {
         fontSize: 16,
-        fontWeight: '600',
-        color: '#667eea',
+        fontWeight: '700',
+        color: '#ffffff',
+        letterSpacing: -0.3,
     },
     buttonContainer: {
         gap: 12,
-        marginBottom: 40,
+        marginBottom: 80,
+        marginTop: 0,
     },
     button: {
         borderRadius: 16,
@@ -375,8 +446,7 @@ const styles = {
         justifyContent: 'center',
         padding: 18,
         gap: 8,
-        // 터치 이벤트 통과 보장
-        pointerEvents: 'none',
+        // 터치 이벤트 통과 보장 제거 - 버튼이 클릭되도록
     },
     startButtonText: {
         fontSize: 16,
@@ -384,7 +454,7 @@ const styles = {
         color: '#ffffff',
     },
     disagreeButton: {
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        backgroundColor: '#3a4556',
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.2)',
         padding: 18,

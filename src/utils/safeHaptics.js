@@ -11,7 +11,7 @@ export const safeHapticNotification = (type = 'Success') => {
             return Haptics.notificationAsync(Haptics.NotificationFeedbackType[type]).catch(() => {});
         }
     } catch (error) {
-        console.log('Haptic feedback failed:', error);
+        if (__DEV__) console.log('Haptic feedback failed:', error);
     }
 };
 
@@ -23,7 +23,7 @@ export const safeHapticImpact = (style = 'Light') => {
             return Haptics.impactAsync(Haptics.ImpactFeedbackType[style]).catch(() => {});
         }
     } catch (error) {
-        console.log('Haptic impact failed:', error);
+        if (__DEV__) console.log('Haptic impact failed:', error);
     }
 };
 

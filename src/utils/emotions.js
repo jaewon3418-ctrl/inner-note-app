@@ -66,24 +66,24 @@ export const getContextualQuote = (streak, recentEmotions, language = 'ko') => {
             streak7: "7일 연속 기록 중! 꾸준함이 만드는 변화를 느껴보세요 🌱",
             streak3: "연속 기록 중! 마음을 돌보는 습관이 자리잡고 있어요 ✨",
             anxious: "불안한 마음도 괜찮아요. 지금 이 순간에 집중해보세요 🌿",
-            sad: "슬픔도 소중한 감정이에요. 충분히 느끼고 받아들여주세요 💙",
+            sad: "슬픔도 소중한 감정이에요. 충분히 느끼고 받아들여주세요 💜",
             general: [
                 "오늘도 당신의 마음을 돌보는 하루가 되길 바라요 🌸",
                 "작은 감정도 소중하게 기록해보세요 ✨",
                 "마음이 힘들 땐 잠시 멈춰 숨을 고르세요 🌿",
-                "당신의 감정은 모두 의미가 있어요 💙"
+                "당신의 감정은 모두 의미가 있어요 💜"
             ]
         },
         en: {
             streak7: "7 days in a row! Feel the change that consistency brings 🌱",
             streak3: "On a streak! Your heart-caring habit is taking root ✨",
             anxious: "Anxious feelings are okay. Focus on this moment 🌿",
-            sad: "Sadness is also a precious emotion. Feel it fully 💙",
+            sad: "Sadness is also a precious emotion. Feel it fully 💜",
             general: [
                 "May today be a day to care for your heart 🌸",
                 "Try jotting down even tiny feelings ✨",
                 "When your heart is heavy, pause and breathe 🌿",
-                "All your emotions have meaning 💙"
+                "All your emotions have meaning 💜"
             ]
         }
     };

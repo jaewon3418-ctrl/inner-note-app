@@ -39,3 +39,5 @@ src/config/apiKeys.js
 
 # typescript
 *.tsbuildinfo
+
+.granite

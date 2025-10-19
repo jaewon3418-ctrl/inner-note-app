@@ -1,0 +1,30 @@
+{
+  "emotionHistory": [
+    {
+      "id": "1704067200000",
+      "date": "2024-01-01T00:00:00.000Z",
+      "text": "오늘은 새해 첫날이라 기분이 좋았어요. 새로운 시작이라는 느낌이 들어서 설레기도 했습니다.",
+      "emotion": "기쁨",
+      "emotionKey": "JOY",
+      "intensity": 4,
+      "comfort": "새해 새 출발은 항상 희망적입니다. 좋은 계획들이 현실이 되길 바라요.",
+      "action": "목표 세우기",
+      "deletedAt": null
+    },
+    {
+      "id": "1704153600000",
+      "date": "2024-01-02T00:00:00.000Z",
+      "text": "일이 많아서 조금 스트레스를 받았지만, 차근차근 해결해 나가고 있어요.",
+      "emotion": "불안",
+      "emotionKey": "ANXIOUS",
+      "intensity": 2,
+      "comfort": "하나씩 차근차근 해결해나가는 당신의 모습이 멋져요. 충분히 잘하고 있어요.",
+      "action": "계획 세우기",
+      "deletedAt": null
+    }
+  ],
+  "streak": 15,
+  "language": "ko",
+  "exportDate": "2024-10-01T00:00:00.000Z",
+  "encrypted": false
+}

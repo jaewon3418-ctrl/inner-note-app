@@ -1,0 +1,15 @@
+{
+  "name": "deeplog-api-proxy",
+  "version": "1.0.0",
+  "description": "API proxy for DeepLog app to secure OpenAI key.",
+  "main": "analyze.js",
+  "scripts": {
+    "start": "node analyze.js",
+    "vercel-build": "echo 'Build step not required'"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "openai": "^4.20.1"
+  }
+}

@@ -33,7 +33,7 @@ const EmotionWheel = ({ onEmotionSelect, language = 'ko', selectedEmotion }) => 
     <View style={[styles.wheelContainer, { width: wheelSize, height: wheelSize }]}>
       {/* 중앙 원 */}
       <LinearGradient
-        colors={['#667eea', '#764ba2']}
+        colors={['#C9A962', '#B8985A']}
         style={[styles.centerCircle, { 
           width: centerSize, 
           height: centerSize,
@@ -99,7 +99,7 @@ const styles = {
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#667eea',
+    shadowColor: '#C9A962',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,

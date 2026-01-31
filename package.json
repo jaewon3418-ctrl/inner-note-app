@@ -1,6 +1,6 @@
 {
-  "name": "testapp",
-  "version": "1.3.0",
+  "name": "deeplog",
+  "version": "1.3.8",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
@@ -16,6 +16,7 @@
   "dependencies": {
     "@apps-in-toss/framework": "^1.2.0",
     "@apps-in-toss/web-framework": "^1.2.0",
+    "@expo/config-plugins": "^54.0.4",
     "@expo/metro-runtime": "~5.0.4",
     "@expo/vector-icons": "^14.1.0",
     "@formatjs/intl-datetimeformat": "^6.18.0",
@@ -28,6 +29,7 @@
     "@react-native-community/datetimepicker": "8.4.1",
     "crypto-js": "^4.2.0",
     "expo": "^53.0.22",
+    "expo-blur": "~14.1.5",
     "expo-clipboard": "^7.1.5",
     "expo-constants": "~17.1.7",
     "expo-crypto": "^14.1.5",
@@ -46,6 +48,7 @@
     "expo-splash-screen": "^0.30.10",
     "expo-status-bar": "~2.2.3",
     "expo-store-review": "^8.1.5",
+    "expo-tracking-transparency": "~5.2.4",
     "intl": "^1.2.5",
     "lottie-react-native": "7.2.2",
     "lucide-react": "^0.460.0",
@@ -55,6 +58,7 @@
     "react-dom": "19.0.0",
     "react-intl": "^7.1.11",
     "react-native": "0.79.5",
+    "react-native-fbsdk-next": "^13.4.1",
     "react-native-get-random-values": "^1.11.0",
     "react-native-safe-area-context": "5.4.0",
     "react-native-share": "^12.2.0",
@@ -65,10 +69,10 @@
     "@apps-in-toss/cli": "^1.2.0",
     "@granite-js/cli": "^0.1.26",
     "@tailwindcss/postcss": "^4.1.12",
-    "autoprefixer": "^10.4.21",
+    "autoprefixer": "^10.4.24",
     "babel-preset-expo": "~13.0.0",
     "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.17",
+    "tailwindcss": "^3.4.19",
     "typescript": "~5.8.3"
   },
   "private": true

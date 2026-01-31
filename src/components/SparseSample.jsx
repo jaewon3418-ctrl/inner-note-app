@@ -9,7 +9,7 @@ const SparseSample = ({ language = 'ko', style }) => {
 
   return (
     <View style={[styles.container, style]}>
-      <Ionicons name="information-circle-outline" size={14} color="#f59e0b" />
+      <Ionicons name="information-circle-outline" size={16} color="#fbbf24" />
       <Text style={styles.text}>{text}</Text>
     </View>
   );
@@ -19,18 +19,18 @@ const styles = {
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    backgroundColor: 'rgba(251, 191, 36, 0.2)',
     borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-    gap: 4,
+    borderColor: 'rgba(251, 191, 36, 0.5)',
+    gap: 6,
   },
   text: {
-    color: '#f59e0b',
-    fontSize: 11,
-    fontWeight: '600',
+    color: '#fbbf24',
+    fontSize: 13,
+    fontWeight: '700',
   },
 };
 

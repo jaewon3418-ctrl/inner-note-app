@@ -20,32 +20,32 @@ const WeeklyReport = ({
     const t = (key) => {
         const translations = {
             ko: {
-                weeklyReport: '주간 리포트',
+                weeklyReport: '주간 인사이트',
                 thisWeek: '이번 주',
-                entries: '기록',
-                days: '일',
+                entries: '기록 수',
+                days: '연속 기록',
                 streak: '연속 기록',
                 mostFrequent: '자주 느낀 감정',
                 shareReport: '리포트 공유',
                 inviteFriend: '친구 초대',
                 generatingImage: '이미지 생성 중...',
-                shareText: '내 감정 기록을 확인해보세요! INNER NOTE와 함께 마음 정리하고 있어요 ✨',
-                referralText: 'INNER NOTE로 감정 기록하고 있어요! 당신도 함께해요 💙\n\n✅ AI 위로와 조언\n✅ 프라이버시 보호\n✅ 간단한 기록\n\n다운로드: ',
-                appTagline: '마음을 기록하는 공간'
+                shareText: 'DeepLog로 매일 기록하며 성장하는 중 ✨',
+                referralText: '매일 기록하며 성장하는 중 ✨\n\n✅ 감정 패턴 분석과 인사이트\n✅ AI 기반 맞춤 조언\n✅ 완벽한 프라이버시 보호\n\n다운로드: ',
+                appTagline: 'Track your patterns'
             },
             en: {
-                weeklyReport: 'Weekly Report',
-                thisWeek: 'This Week',
-                entries: 'entries',
-                days: 'days',
+                weeklyReport: 'Weekly Insights',
+                thisWeek: 'This week',
+                entries: 'Entries',
+                days: 'Day streak',
                 streak: 'Streak',
                 mostFrequent: 'Most Frequent Emotion',
                 shareReport: 'Share Report',
                 inviteFriend: 'Invite Friend',
                 generatingImage: 'Generating image...',
-                shareText: 'Check out my emotion journal! Recording my feelings with INNER NOTE ✨',
-                referralText: 'I\'m journaling my emotions with INNER NOTE! Join me 💙\n\n✅ AI comfort & advice\n✅ Privacy protected\n✅ Simple recording\n\nDownload: ',
-                appTagline: 'A space to record your heart'
+                shareText: 'Check out my emotion journal! Recording my feelings with DeepLog ✨',
+                referralText: 'I\'m journaling my emotions with DeepLog! Join me 💙\n\n✅ AI comfort & advice\n✅ Privacy protected\n✅ Simple recording\n\nDownload: ',
+                appTagline: 'Space for your emotions'
             }
         };
         return translations[language]?.[key] || key;
@@ -116,7 +116,7 @@ const WeeklyReport = ({
 
         } catch (error) {
             console.error('Error sharing image:', error);
-            Alert.alert('오류', '이미지 공유 중 오류가 발생했습니다.');
+            Alert.alert('오류', '이미지 공유 중 오류가 났어');
         } finally {
             setIsGenerating(false);
         }
@@ -126,7 +126,7 @@ const WeeklyReport = ({
     const shareReferralLink = async () => {
         try {
             const appStoreUrl = Platform.OS === 'ios' 
-                ? 'https://apps.apple.com/kr/app/inner-note-ai-%EA%B0%90%EC%A0%95%EC%9D%BC%EA%B8%B0/id6751752636'
+                ? 'https://apps.apple.com/kr/app/deeplog-ai/id6751752636'
                 : 'https://play.google.com/store/apps/details?id=com.wodnjs3418.TestApp';
             
             const shareOptions = {
@@ -143,7 +143,7 @@ const WeeklyReport = ({
 
         } catch (error) {
             console.error('Error sharing referral:', error);
-            Alert.alert('오류', '공유 중 오류가 발생했습니다.');
+            Alert.alert('오류', '공유 중 오류가 났어');
         }
     };
 
@@ -181,7 +181,7 @@ const WeeklyReport = ({
                     )}
 
                     <View style={styles.appBranding}>
-                        <Text style={styles.appName}>INNER NOTE</Text>
+                        <Text style={styles.appName}>DeepLog</Text>
                         <Text style={styles.appTagline}>{t('appTagline')}</Text>
                     </View>
                 </View>
@@ -194,7 +194,7 @@ const WeeklyReport = ({
                     onPress={shareAsImage}
                     disabled={isGenerating}
                 >
-                    <Ionicons name="image" size={20} color="#667eea" />
+                    <Ionicons name="image" size={20} color="#C9A962" />
                     <Text style={styles.shareButtonText}>
                         {isGenerating ? t('generatingImage') : t('shareReport')}
                     </Text>
@@ -204,7 +204,7 @@ const WeeklyReport = ({
                     style={styles.shareButton}
                     onPress={shareReferralLink}
                 >
-                    <Ionicons name="person-add" size={20} color="#667eea" />
+                    <Ionicons name="person-add" size={20} color="#C9A962" />
                     <Text style={styles.shareButtonText}>{t('inviteFriend')}</Text>
                 </TouchableOpacity>
             </View>
@@ -318,7 +318,7 @@ const styles = {
     shareButtonText: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#667eea',
+        color: '#C9A962',
         marginLeft: 8,
     },
 };

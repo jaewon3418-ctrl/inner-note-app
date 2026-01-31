@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Image, StyleSheet, StatusBar } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import HealingEmotionApp from './src/HealingEmotionApp';
 
@@ -35,24 +35,30 @@ export default function App() {
 
     if (!appIsReady) {
         return (
-            <SafeAreaView style={styles.splashContainer} edges={[]}>
-                <StatusBar barStyle="light-content" backgroundColor="#667eea" translucent={false} />
-                <Image 
-                    source={require('./assets/splash.png')} 
-                    style={styles.splashImage}
-                    resizeMode="cover"
-                />
-            </SafeAreaView>
+            <SafeAreaProvider>
+                <SafeAreaView style={styles.splashContainer} edges={[]}>
+                    <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" translucent={false} />
+                    <Image
+                        source={require('./assets/splash.png')}
+                        style={styles.splashImage}
+                        resizeMode="cover"
+                    />
+                </SafeAreaView>
+            </SafeAreaProvider>
         );
     }
 
-    return <HealingEmotionApp />;
+    return (
+        <SafeAreaProvider>
+            <HealingEmotionApp />
+        </SafeAreaProvider>
+    );
 }
 
 const styles = StyleSheet.create({
     splashContainer: {
         flex: 1,
-        backgroundColor: '#667eea',
+        backgroundColor: '#1a1a1a',
         position: 'absolute',
         top: 0,
         left: 0,

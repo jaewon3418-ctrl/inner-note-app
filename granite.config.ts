@@ -1,9 +1,9 @@
 import { defineConfig } from '@apps-in-toss/web-framework/config';
 
 export default defineConfig({
-  appName: "innernote",
+  appName: "deeplog",
   brand: {
-    displayName: 'InnerNote',
+    displayName: 'DeepLog',
     primaryColor: '#3182F6',
     icon: null,
     bridgeColorMode: 'basic',

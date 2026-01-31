@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppEventsLogger } from 'react-native-fbsdk-next';
 
 // 이벤트 로깅 시스템
 class Analytics {
@@ -63,6 +64,16 @@ class Analytics {
       word_count: wordCount,
       has_emotion: emotionText && emotionText.length > 0
     });
+
+    // Facebook 이벤트 로깅
+    try {
+      AppEventsLogger.logEvent('WriteSubmit', {
+        word_count: wordCount,
+        has_emotion: emotionText && emotionText.length > 0 ? 'true' : 'false'
+      });
+    } catch (error) {
+      console.log('Facebook event logging error:', error);
+    }
   }
 
   async logAiReplyView(emotion, replyLength = 0) {

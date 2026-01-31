@@ -148,7 +148,7 @@ const StreakCalendar = ({
             <View style={styles.header}>
                 <View style={styles.streakInfo}>
                     <View style={styles.streakBadge}>
-                        <MaterialCommunityIcons name="fire" size={16} color="#FF6B35" />
+                        <MaterialCommunityIcons name="fire" size={16} color="#C9A962" />
                         <Text style={styles.streakNumber}>{streak}</Text>
                         <Text style={styles.streakLabel}>{t('days')}</Text>
                     </View>
@@ -162,35 +162,39 @@ const StreakCalendar = ({
                                 styles.token,
                                 index < recoveryTokens ? styles.tokenActive : styles.tokenUsed
                             ]}>
-                                <Ionicons 
-                                    name="shield-checkmark" 
-                                    size={12} 
-                                    color={index < recoveryTokens ? "#10B981" : "#6B7280"} 
+                                <Ionicons
+                                    name="shield-checkmark"
+                                    size={12}
+                                    color={index < recoveryTokens ? "#C9A962" : "rgba(255, 255, 255, 0.3)"}
                                 />
                             </View>
                         ))}
                     </View>
                     <View style={styles.tokenLabelContainer}>
                         <Text style={styles.tokenLabel}>{t('recoveryTokens')}</Text>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={styles.helpButton}
                             onPress={() => setShowTokenHelp(!showTokenHelp)}
                         >
-                            <Ionicons name="help-circle" size={14} color="#FFD700" />
+                            <Ionicons name="help-circle" size={16} color="rgba(255, 255, 255, 0.4)" />
                         </TouchableOpacity>
                     </View>
                     
                     {/* 도움말 툴팁 */}
                     {showTokenHelp && (
-                        <TouchableOpacity 
-                            style={styles.helpTooltip}
-                            onPress={() => setShowTokenHelp(false)}
-                            activeOpacity={0.9}
-                        >
-                            <Text style={styles.helpTooltipText}>
-                                {t('tokenExplanation')}
-                            </Text>
-                        </TouchableOpacity>
+                        <>
+                            {/* 배경 오버레이 - 아무데나 눌러서 닫기 */}
+                            <TouchableOpacity
+                                style={styles.helpOverlay}
+                                onPress={() => setShowTokenHelp(false)}
+                                activeOpacity={1}
+                            />
+                            <View style={styles.helpTooltip}>
+                                <Text style={styles.helpTooltipText}>
+                                    {t('tokenExplanation')}
+                                </Text>
+                            </View>
+                        </>
                     )}
                 </View>
             </View>
@@ -266,28 +270,30 @@ const styles = {
     streakBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 107, 53, 0.1)',
+        backgroundColor: 'rgba(201, 169, 98, 0.15)',
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 12,
         marginBottom: 4,
+        borderWidth: 1,
+        borderColor: 'rgba(201, 169, 98, 0.25)',
     },
     streakNumber: {
         fontSize: 16,
-        fontWeight: '700',
-        color: '#FF6B35',
+        fontWeight: '500',
+        color: '#C9A962',
         marginLeft: 4,
         marginRight: 2,
     },
     streakLabel: {
         fontSize: 12,
-        color: '#FF6B35',
-        opacity: 0.8,
+        color: '#C9A962',
+        fontWeight: '400',
     },
     streakTitle: {
-        fontSize: 12,
-        color: 'rgba(255, 255, 255, 0.7)',
-        fontWeight: '500',
+        fontSize: 11,
+        color: 'rgba(255, 255, 255, 0.5)',
+        fontWeight: '400',
     },
     tokenInfo: {
         alignItems: 'center',
@@ -307,10 +313,10 @@ const styles = {
         marginHorizontal: 2,
     },
     tokenActive: {
-        backgroundColor: 'rgba(16, 185, 129, 0.2)',
+        backgroundColor: 'rgba(201, 169, 98, 0.2)',
     },
     tokenUsed: {
-        backgroundColor: 'rgba(107, 114, 128, 0.2)',
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
     },
     tokenLabelContainer: {
         flexDirection: 'row',
@@ -318,32 +324,44 @@ const styles = {
         gap: 4,
     },
     tokenLabel: {
-        fontSize: 12,
-        color: 'rgba(255, 255, 255, 0.7)',
-        fontWeight: '500',
+        fontSize: 11,
+        color: 'rgba(255, 255, 255, 0.5)',
+        fontWeight: '400',
     },
     helpButton: {
         padding: 2,
+    },
+    helpOverlay: {
+        position: 'absolute',
+        top: -500,
+        left: -500,
+        right: -500,
+        bottom: -500,
+        width: 2000,
+        height: 2000,
+        zIndex: 999,
     },
     helpTooltip: {
         position: 'absolute',
         top: 25,
         right: -30,
-        backgroundColor: 'rgba(0, 0, 0, 0.9)',
-        borderRadius: 8,
-        padding: 12,
-        width: 180,
+        backgroundColor: '#161B22',
+        borderRadius: 12,
+        padding: 14,
+        width: 200,
         zIndex: 1000,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
         elevation: 5,
     },
     helpTooltipText: {
         fontSize: 12,
-        color: '#fff',
-        lineHeight: 16,
+        color: 'rgba(255, 255, 255, 0.7)',
+        lineHeight: 18,
         textAlign: 'left',
     },
     calendarHeader: {
@@ -358,9 +376,10 @@ const styles = {
         borderRadius: 8,
     },
     monthTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: 'rgba(255, 255, 255, 0.9)',
+        fontSize: 16,
+        fontWeight: '400',
+        color: 'rgba(255, 255, 255, 0.8)',
+        letterSpacing: 0.3,
     },
     weekHeader: {
         flexDirection: 'row',
@@ -372,9 +391,9 @@ const styles = {
         paddingVertical: 8,
     },
     weekDayText: {
-        fontSize: 12,
-        fontWeight: '500',
-        color: 'rgba(255, 255, 255, 0.6)',
+        fontSize: 11,
+        fontWeight: '400',
+        color: 'rgba(255, 255, 255, 0.4)',
     },
     calendar: {
         flexDirection: 'row',
@@ -392,28 +411,28 @@ const styles = {
         opacity: 0.3,
     },
     dayCellToday: {
-        backgroundColor: 'rgba(167, 139, 250, 0.2)',
+        backgroundColor: 'rgba(201, 169, 98, 0.2)',
         borderRadius: 8,
     },
     dayCellWithRecord: {
-        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        backgroundColor: 'rgba(201, 169, 98, 0.08)',
         borderRadius: 8,
     },
     dayText: {
-        fontSize: 14,
-        fontWeight: '500',
+        fontSize: 13,
+        fontWeight: '400',
         color: 'rgba(255, 255, 255, 0.7)',
     },
     dayTextInactive: {
-        color: 'rgba(255, 255, 255, 0.3)',
+        color: 'rgba(255, 255, 255, 0.2)',
     },
     dayTextToday: {
-        color: '#A78BFA',
-        fontWeight: '700',
+        color: '#C9A962',
+        fontWeight: '600',
     },
     dayTextWithRecord: {
-        color: '#10B981',
-        fontWeight: '600',
+        color: 'rgba(255, 255, 255, 0.9)',
+        fontWeight: '500',
     },
     recordDot: {
         position: 'absolute',
@@ -421,7 +440,7 @@ const styles = {
         width: 4,
         height: 4,
         borderRadius: 2,
-        backgroundColor: '#10B981',
+        backgroundColor: '#C9A962',
     },
 };
 

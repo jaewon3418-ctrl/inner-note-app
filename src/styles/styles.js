@@ -41,7 +41,7 @@ export const styles = StyleSheet.create({
         marginBottom: 16,
         borderRadius: 20,
         overflow: 'hidden',
-        shadowColor: '#667eea',
+        shadowColor: '#C9A962',
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.3,
         shadowRadius: 12,
@@ -126,7 +126,7 @@ export const styles = StyleSheet.create({
         marginBottom: 20,
         borderRadius: 20,
         overflow: 'hidden',
-        shadowColor: '#667eea',
+        shadowColor: '#C9A962',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.1,
         shadowRadius: 12,
@@ -144,7 +144,7 @@ export const styles = StyleSheet.create({
     quoteTitle: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#667eea',
+        color: '#C9A962',
         letterSpacing: -0.3,
     },
     quoteText: {

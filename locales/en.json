@@ -1,5 +1,5 @@
 {
-  "CFBundleDisplayName": "INNER NOTE",
+  "CFBundleDisplayName": "DeepLog",
   "NSFaceIDUsageDescription": "Face ID is used to securely access your emotion records.",
   "NSBiometricUsageDescription": "Biometric authentication is used to securely access your emotion records.",
   "NSCameraUsageDescription": "Camera is used to add photos.",

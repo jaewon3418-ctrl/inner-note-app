@@ -31,7 +31,7 @@ extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
 }
 expoAutolinking.useExpoModules()
 
-rootProject.name = 'INNER NOTE'
+rootProject.name = 'DeepLog'
 
 expoAutolinking.useExpoVersionCatalog()
 

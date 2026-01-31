@@ -66,7 +66,7 @@ export async function decryptBackupData_CTR_HMAC(payload, password) {
 
   // 구(2.0/GCM) 백업 감지 → 안내 메시지
   if (parsed.version === '2.0') {
-    throw new Error('이전 버전(2.0) 백업은 새 버전에서 복원할 수 없습니다. 최신 버전에서 다시 내보내 주세요.');
+    throw new Error('이전 버전(2.0) 백업은 새 버전에서 복원할 수 없어. 최신 버전에서 다시 내보내줘');
   }
 
   if (!(parsed.version === '2.1' && parsed.salt && parsed.iv && parsed.ct && parsed.mac)) {

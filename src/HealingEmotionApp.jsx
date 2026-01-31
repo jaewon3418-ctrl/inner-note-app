@@ -45,7 +45,7 @@ import * as Sharing from 'expo-sharing';
 import { translations, t } from './constants/translations';
 import { HELPLINES, TRASH_TTL_DAYS } from './constants/helplines';
 import { isCrisis, getContextualQuote } from './utils/emotions';
-import { analyzeEmotion } from './services/openai';
+import { analyzeEmotion, chatWithAI, summarizeChat } from './services/openai';
 import 'react-native-get-random-values';
 import { loadData as loadStorageData, saveData as saveStorageData } from './utils/storage';
 import { saveEncryptedData, loadEncryptedData, checkUserConsent, checkOpenAIConsent, exportUserData, revokeConsent, deleteAllEncryptedData } from './utils/secureStorage';
@@ -73,8 +73,11 @@ import EmotionWheel from './components/EmotionWheel';
 import FloatingActions from './components/FloatingActions';
 import StreakCalendar from './components/StreakCalendar';
 import WeeklyReport from './components/WeeklyReport2';
+import UpdatePrompt from './components/UpdatePrompt';
 import analytics from './utils/analytics';
 import * as StoreReview from 'expo-store-review';
+import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
+import { Settings } from 'react-native-fbsdk-next';
 
 const { width, height } = Dimensions.get('window');
 
@@ -121,21 +124,105 @@ const AutoGrowInput = ({
   );
 };
 
+// ============================================
+// 🎨 DESIGN TOKENS - Premium Minimal Dark
+// ============================================
+const DESIGN = {
+    colors: {
+        // 배경 (깊은 다크)
+        bgGradient: ['#0D1117', '#0D1117', '#0D1117'],
+        bgCard: '#161B22',
+
+        // 카드 (미묘한 구분)
+        cardBg: 'rgba(255, 255, 255, 0.03)',
+        cardBgSolid: '#161B22',
+        cardBorder: 'rgba(255, 255, 255, 0.06)',
+        cardShadow: 'rgba(0, 0, 0, 0.5)',
+
+        // 텍스트 (화이트 계층)
+        textPrimary: '#FFFFFF',
+        textSecondary: 'rgba(255, 255, 255, 0.6)',
+        textMuted: 'rgba(255, 255, 255, 0.35)',
+        textOnDark: '#FFFFFF',
+
+        // 액센트 (골드 - 고급스러움)
+        primary: '#C9A962',
+        primaryLight: '#D4BC7D',
+        accent: '#B8985A',
+
+        // CTA 버튼
+        ctaGradient: ['#C9A962', '#B8985A'],
+        ctaDisabled: 'rgba(255, 255, 255, 0.08)',
+
+        // 감정 색상 (muted)
+        emotions: {
+            great: '#4ADE80',
+            good: '#60D4AE',
+            meh: '#FBBF24',
+            bad: '#F97316',
+            sad: '#8B5CF6',
+        },
+    },
+
+    typography: {
+        // 우아한 폰트
+        title: { size: 26, weight: '200', letterSpacing: 1 },
+        subtitle: { size: 15, weight: '300', letterSpacing: 0.5 },
+        body: { size: 15, weight: '400', lineHeight: 24 },
+        caption: { size: 12, weight: '400', letterSpacing: 0.8 },
+        button: { size: 14, weight: '500', letterSpacing: 1 },
+    },
+
+    spacing: {
+        xs: 4,
+        sm: 8,
+        md: 16,
+        lg: 24,
+        xl: 32,
+        xxl: 48,
+    },
+
+    radius: {
+        sm: 8,
+        md: 12,
+        lg: 16,
+        xl: 20,
+        full: 999,
+    },
+
+    shadows: {
+        soft: {
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 12,
+            elevation: 6,
+        },
+        medium: {
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.4,
+            shadowRadius: 16,
+            elevation: 8,
+        },
+    },
+};
+
 // 언어 독립적 감정 키 시스템
 const EMOTIONS = {
-    JOY:     { ko: '좋아',   en: 'Good',   color: '#4ADE80', order: 1 },
-    CALM:    { ko: '평온해', en: 'Calm',   color: '#4ADE80', order: 2 },
-    OK:      { ko: '괜찮아', en: 'Okay',   color: '#FBBF24', order: 3 },
-    LONELY:  { ko: '외로워', en: 'Lonely', color: '#FBBF24', order: 4 },
-    ANXIOUS: { ko: '불안해', en: 'Anxious', color: '#EF4444', order: 5 },
-    SAD:     { ko: '슬퍼',   en: 'Sad',    color: '#EF4444', order: 6 },
+    JOY:     { ko: '기쁨',   en: 'Good',   color: DESIGN.colors.emotions.great, order: 1 },
+    CALM:    { ko: '평온',   en: 'Calm',   color: DESIGN.colors.emotions.good, order: 2 },
+    OK:      { ko: '무난',   en: 'Okay',   color: DESIGN.colors.emotions.meh, order: 3 },
+    LONELY:  { ko: '외로움', en: 'Lonely', color: DESIGN.colors.emotions.meh, order: 4 },
+    ANXIOUS: { ko: '불안',   en: 'Anxious', color: DESIGN.colors.emotions.bad, order: 5 },
+    SAD:     { ko: '슬픔',   en: 'Sad',    color: DESIGN.colors.emotions.sad, order: 6 },
 };
 
 const toEmotionKey = (label = '') => {
     const s = `${label}`.toLowerCase();
-    if (['좋아','행복해','good','happy','great'].some(v=>s.includes(v))) return 'JOY';
+    if (['좋아','기쁨','행복','good','happy','great'].some(v=>s.includes(v))) return 'JOY';
     if (['평온','차분','calm','peaceful'].some(v=>s.includes(v))) return 'CALM';
-    if (['괜찮','ok','okay','fine'].some(v=>s.includes(v))) return 'OK';
+    if (['괜찮','무난','ok','okay','fine'].some(v=>s.includes(v))) return 'OK';
     if (['외로','lonely'].some(v=>s.includes(v))) return 'LONELY';
     if (['불안','anxious','worried','stressed'].some(v=>s.includes(v))) return 'ANXIOUS';
     if (['슬픔','슬퍼','sad','depressed'].some(v=>s.includes(v))) return 'SAD';
@@ -180,8 +267,8 @@ const EmotionInput = memo(function EmotionInput({ t, onSubmit, disabled, resetSe
 
     return (
         <View style={styles.inputContainer}>
-            {/* 입력 버블 */}
-            <View style={styles.inputBubble}>
+            {/* 외부 하얀 테두리 (디자인용) */}
+            <View style={styles.inputBubbleOuter}>
                 <AutoGrowInput
                     value={currentText}
                     onChangeText={handleTextChange}
@@ -191,19 +278,19 @@ const EmotionInput = memo(function EmotionInput({ t, onSubmit, disabled, resetSe
                     placeholder=""
                     placeholderTextColor="rgba(255,255,255,0.4)"
                     style={styles.emotionInputSimple}
-                    maxLength={200}
+                    maxLength={500}
                     returnKeyType="default"
                     blurOnSubmit={false}
                     autoCorrect={false}
                     keyboardType="default"
                 />
             </View>
-            
+
             {/* 카운터 별도 행 */}
             <View style={styles.inputCounterRow}>
                 <Text style={styles.dailyUsage}>{translations[language || 'ko'].dailyDiaryUsage}: {dailyCount}/1</Text>
                 {currentText.length > 0 && (
-                    <Text style={styles.charCount}>{currentText.length}/200</Text>
+                    <Text style={styles.charCount}>{currentText.length}/500</Text>
                 )}
             </View>
         </View>
@@ -234,9 +321,20 @@ export default function App() {
     const [stars, setStars] = useState([]);
     const starAnimations = useRef([]);
     const scrollViewRef = useRef(null);
+    const chatScrollViewRef = useRef(null);
+    const inputRef = useRef(null);
     const [showAnonymousModal, setShowAnonymousModal] = useState(false);
     const [anonymousText, setAnonymousText] = useState('');
     const [anonymousResult, setAnonymousResult] = useState(null);
+    // AI 채팅 관련 state
+    const [chatHistory, setChatHistory] = useState([]);
+    const [chatInput, setChatInput] = useState('');
+    const [dailyChatTurns, setDailyChatTurns] = useState(0);
+    const [sessionChatTurns, setSessionChatTurns] = useState(0);
+    const [isPremium, setIsPremium] = useState(false); // 나중에 IAP로 관리
+    const [savedChatSessions, setSavedChatSessions] = useState([]); // 저장된 채팅 기록
+    const [showChatHistory, setShowChatHistory] = useState(false); // 채팅 기록 모달
+    const [currentSessionId, setCurrentSessionId] = useState(null); // 현재 활성 세션 ID
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showShortInputConfirm, setShowShortInputConfirm] = useState(false);
     const [showShortDiaryConfirm, setShowShortDiaryConfirm] = useState(false);
@@ -261,9 +359,17 @@ export default function App() {
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [backupPassword, setBackupPassword] = useState('');
     const [currentInputText, setCurrentInputText] = useState('');
-    
+    const [showImportPasswordModal, setShowImportPasswordModal] = useState(false);
+    const [importPassword, setImportPassword] = useState('');
+    const [importFileContent, setImportFileContent] = useState(null);
+    const [userName, setUserName] = useState('');
+    const [showNameInputModal, setShowNameInputModal] = useState(false);
+    const [showNameChangeModal, setShowNameChangeModal] = useState(false);
+    const [tempNameInput, setTempNameInput] = useState('');
+
     // 세션별 고정 인사말 (언어 변경 시 업데이트)
     const [greetingIndex] = useState(() => Math.floor(Math.random() * translations.ko.greetings.length));
+
     const [greetingSubIndex] = useState(() => Math.floor(Math.random() * translations.ko.greetingSubs.length));
     
     const sessionGreeting = translations[language || 'ko'].greetings[greetingIndex];
@@ -413,7 +519,7 @@ export default function App() {
     useEffect(() => {
         // 앱 시작 시 URL 체크 (위젯에서 열림)
         Linking.getInitialURL().then(url => {
-            if (url && url.includes('innernotequickwrite')) {
+            if (url && url.includes('deeplogquickwrite')) {
                 // 위젯에서 열림 - 홈 탭으로 이동하고 입력창 포커스
                 setCurrentTab('home');
                 setShowEmotion(false);
@@ -429,7 +535,7 @@ export default function App() {
 
         // 앱 실행 중 URL 처리
         const subscription = Linking.addEventListener('url', ({ url }) => {
-            if (url.includes('innernotequickwrite')) {
+            if (url.includes('deeplogquickwrite')) {
                 setCurrentTab('home');
                 setShowEmotion(false);
                 setTimeout(() => {
@@ -443,6 +549,38 @@ export default function App() {
         });
 
         return () => subscription?.remove();
+    }, []);
+
+    // 채팅 턴 수 초기화 (로컬 시간 기준 자정에 리셋)
+    useEffect(() => {
+        const checkAndResetChatTurns = async () => {
+            try {
+                // 로컬 시간 기준 오늘 날짜 구하기 (getLocalDateKey는 나중에 정의됨)
+                const today = (() => {
+                    const d = new Date();
+                    const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
+                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                })();
+
+                // AsyncStorage에서 마지막 사용 날짜와 턴 수 불러오기
+                const lastChatDate = await AsyncStorage.getItem('lastChatDate');
+                const savedDailyTurns = await AsyncStorage.getItem('dailyChatTurns');
+
+                if (lastChatDate !== today) {
+                    // 날짜가 다르면 턴 수 리셋
+                    setDailyChatTurns(0);
+                    await AsyncStorage.setItem('lastChatDate', today);
+                    await AsyncStorage.setItem('dailyChatTurns', '0');
+                } else if (savedDailyTurns) {
+                    // 같은 날이면 저장된 턴 수 불러오기
+                    setDailyChatTurns(parseInt(savedDailyTurns, 10));
+                }
+            } catch (error) {
+                console.error('Failed to check chat turns:', error);
+            }
+        };
+
+        checkAndResetChatTurns();
     }, []);
 
     // 푸시 알림 설정 (Expo Go가 아닐 때만)
@@ -560,15 +698,15 @@ export default function App() {
 
     const resetAllData = async () => {
         try {
-            await AsyncStorage.multiRemove(['lastRecordDateKey', 'language']);
+            await AsyncStorage.multiRemove(['lastRecordDateKey', 'language', 'lastChatDate', 'dailyChatTurns']);
 
             await SecureStore.deleteItemAsync('appLockEnabled').catch(() => {});
             await SecureStore.deleteItemAsync('emotion_app_key').catch(() => {});
 
             const { clearAllData } = require('./utils/storage');
             await clearAllData();
-            await deleteAllEncryptedData();
-            
+            await deleteAllEncryptedData(); // 모든 암호화 데이터 삭제 (chatSessions 포함)
+
             // 4) 메모리 상태 초기화
             setEmotionHistory([]);
             setStreak(0);
@@ -578,7 +716,11 @@ export default function App() {
             setDailyDiaryCount(0); // 일일 카운트 초기화
             setDailyAnonymousCount(0);
             setLastDiaryDate(''); // 마지막 기록 날짜 초기화
-            
+            setDailyChatTurns(0); // 채팅 턴 초기화
+            setSessionChatTurns(0); // 세션 채팅 턴 초기화
+            setChatHistory([]); // 채팅 기록 초기화
+            setSavedChatSessions([]); // 저장된 채팅 세션 초기화
+
             // 5) 동의 상태 초기화
             setHasUserConsent(false);
             setShowConsentScreen(true);
@@ -635,7 +777,11 @@ export default function App() {
             // 언어 설정 로드
             const savedLang = await AsyncStorage.getItem('language');
             if (savedLang) setLanguage(savedLang);
-            
+
+            // 사용자 이름 로드
+            const savedName = await AsyncStorage.getItem('userName');
+            if (savedName) setUserName(savedName);
+
             // emotionHistory는 아래에서 통합 처리
             if (data.streak) setStreak(parseInt(data.streak));
             if (data.recoveryTokens !== undefined) setRecoveryTokens(parseInt(data.recoveryTokens));
@@ -695,16 +841,50 @@ export default function App() {
                 }
                 
                 setEmotionHistory(history);
-                
+
                 // 오늘 작성한 일기가 있는지 체크
-                const todayEntry = history.find(entry => 
-                    !entry.deletedAt && 
+                const todayEntry = history.find(entry =>
+                    !entry.deletedAt &&
                     (entry.dateKey === todayKey || getLocalDateKey(new Date(entry.date)) === todayKey)
                 );
                 setDailyDiaryCount(todayEntry ? 1 : 0);
             } catch (error) {
                 if (__DEV__) console.log('History load error:', error);
                 setEmotionHistory([]);
+            }
+
+            // 채팅 세션 로드 및 마이그레이션
+            try {
+                const loadedSessions = await loadEncryptedData('chatSessions');
+                if (loadedSessions && Array.isArray(loadedSessions)) {
+                    // 마이그레이션: id가 없는 세션에 id 추가
+                    let needsMigration = false;
+                    const migratedSessions = loadedSessions.map(session => {
+                        if (!session.id) {
+                            needsMigration = true;
+                            return {
+                                ...session,
+                                id: (session.timestamp || Date.now()).toString() + Math.random().toString(36).substr(2, 9)
+                            };
+                        }
+                        return session;
+                    });
+
+                    setSavedChatSessions(migratedSessions);
+
+                    // 마이그레이션이 필요했다면 즉시 저장
+                    if (needsMigration) {
+                        await saveEncryptedData('chatSessions', migratedSessions);
+                        if (__DEV__) console.log('Migrated chat sessions with IDs');
+                    }
+
+                    if (__DEV__) console.log('Loaded chat sessions:', migratedSessions.length, 'sessions');
+                } else {
+                    setSavedChatSessions([]);
+                }
+            } catch (error) {
+                if (__DEV__) console.log('Chat sessions load error:', error);
+                setSavedChatSessions([]);
             }
         } catch (error) {
             if (__DEV__) console.log('Load error:', error);
@@ -721,7 +901,10 @@ export default function App() {
             try {
                 // 감정 히스토리는 암호화하여 별도 저장
                 await saveEncryptedData('emotionHistory', emotionHistory);
-                
+
+                // 채팅 세션도 암호화하여 저장
+                await saveEncryptedData('chatSessions', savedChatSessions);
+
                 await saveStorageData({
                     streak,
                     recoveryTokens,
@@ -734,7 +917,7 @@ export default function App() {
                 if (__DEV__) console.log('Save error:', error);
             }
         }, 300);
-    }, [emotionHistory, streak, recoveryTokens, dailyAnonymousCount, lastDiaryDate, completedActivities]);
+    }, [emotionHistory, savedChatSessions, streak, recoveryTokens, dailyAnonymousCount, lastDiaryDate, completedActivities]);
 
     useEffect(() => {
         saveData();
@@ -765,6 +948,14 @@ export default function App() {
                     if (prev !== today) {
                         setDailyDiaryCount(0);
                         setDailyAnonymousCount(0);
+                        // 채팅 턴도 리셋
+                        setDailyChatTurns(0);
+                        AsyncStorage.setItem('lastChatDate', today).catch(err => {
+                            console.error('Failed to update lastChatDate:', err);
+                        });
+                        AsyncStorage.setItem('dailyChatTurns', '0').catch(err => {
+                            console.error('Failed to update dailyChatTurns:', err);
+                        });
                         return today;
                     }
                     return prev;
@@ -976,13 +1167,15 @@ export default function App() {
     // 안전한 파일 백업 (암호화 옵션 포함)
     const exportSecureBackup = async () => {
         Alert.alert(
-            '🔒 백업 옵션 선택',
-            '데이터를 어떻게 백업하시겠습니까?\n\n🔐 암호화: 비밀번호로 안전하게 보호\n📄 평문: 암호화하지 않음 (주의 필요)',
+            language === 'ko' ? '🔒 백업 옵션 선택' : '🔒 Backup Options',
+            language === 'ko'
+                ? '데이터를 어떻게 백업하시겠습니까?\n\n🔐 암호화: 비밀번호로 안전하게 보호\n📄 평문: 암호화하지 않음 (주의 필요)'
+                : 'How would you like to backup your data?\n\n🔐 Encrypted: Protected with password\n📄 Plain: No encryption (handle with care)',
             [
-                { text: '취소', style: 'cancel' },
-                { text: '평문 백업', style: 'default', onPress: exportPlainBackup },
-                { 
-                    text: '암호화 백업', 
+                { text: language === 'ko' ? '취소' : 'Cancel', style: 'cancel' },
+                { text: language === 'ko' ? '평문 백업' : 'Plain Backup', style: 'default', onPress: exportPlainBackup },
+                {
+                    text: language === 'ko' ? '암호화 백업' : 'Encrypted Backup',
                     style: 'default',
                     onPress: () => {
                         setBackupPassword('');
@@ -996,23 +1189,30 @@ export default function App() {
     // 암호화된 백업
     const exportEncryptedBackup = async () => {
         if (!backupPassword || backupPassword.length < 4) {
-            Alert.alert('비밀번호 오류', '4글자 이상의 비밀번호를 입력해주세요.');
+            Alert.alert(
+                language === 'ko' ? '비밀번호 오류' : 'Password Error',
+                language === 'ko' ? '4글자 이상의 비밀번호를 입력해줘!' : 'Please enter a password with at least 4 characters.'
+            );
             return;
         }
 
         try {
             const result = await LocalAuthentication.authenticateAsync({
-                promptMessage: '암호화 백업을 위해 인증해주세요',
-                fallbackLabel: '비밀번호 사용',
+                promptMessage: language === 'ko' ? '암호화 백업을 위해 인증해줘' : 'Authenticate for encrypted backup',
+                fallbackLabel: language === 'ko' ? '비밀번호 사용' : 'Use Password',
             });
-            
+
             if (!result.success) {
-                Alert.alert('인증 실패', '백업을 취소합니다.');
+                Alert.alert(
+                    language === 'ko' ? '인증 실패' : 'Authentication Failed',
+                    language === 'ko' ? '백업을 취소했어' : 'Backup cancelled.'
+                );
                 return;
             }
 
             const backup = {
                 emotionHistory,
+                chatSessions: savedChatSessions,
                 streak,
                 language,
                 exportDate: new Date().toISOString(),
@@ -1039,77 +1239,268 @@ export default function App() {
             if (await Sharing.isAvailableAsync()) {
                 await Sharing.shareAsync(uri, {
                     mimeType: 'application/octet-stream',
-                    dialogTitle: '🔐 암호화된 감정 백업 파일 (.ait)',
+                    dialogTitle: language === 'ko' ? '🔐 암호화된 감정 백업 파일 (.ait)' : '🔐 Encrypted emotion backup file (.ait)',
                 });
-                showToastMessage(language === 'ko' ? '🔒 암호화 백업이 완료되었습니다' : '🔒 Encrypted backup completed');
+                showToastMessage(language === 'ko' ? '🔒 암호화 백업 완료!' : '🔒 Encrypted backup completed');
             } else {
-                Alert.alert('백업 완료', '암호화된 파일이 생성되었습니다');
+                Alert.alert(
+                    language === 'ko' ? '백업 완료' : 'Backup Complete',
+                    language === 'ko' ? '암호화된 파일이 생성됐어' : 'Encrypted file has been created'
+                );
             }
         } catch (error) {
             console.error('Encrypted backup error:', error);
-            Alert.alert('오류', '암호화 백업 중 오류가 발생했습니다.');
+            Alert.alert(
+                language === 'ko' ? '오류' : 'Error',
+                language === 'ko' ? '암호화 백업 중 오류가 났어' : 'An error occurred during encrypted backup.'
+            );
             setShowPasswordModal(false);
             setBackupPassword('');
         }
     };
 
-    // 평문 백업 (기존 방식)
-    const exportPlainBackup = async () => {
-        Alert.alert(
-            '⚠️ 평문 백업 주의',
-            '암호화되지 않은 파일로 백업됩니다.\n\n개인적인 감정 기록이 포함되어 있으므로 안전한 장소에만 보관하고 신뢰할 수 있는 사람과만 공유하세요.',
-            [
-                { text: '취소', style: 'cancel' },
-                { 
-                    text: '확인 후 백업', 
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            const result = await LocalAuthentication.authenticateAsync({
-                                promptMessage: '평문 백업을 위해 인증해주세요',
-                                fallbackLabel: '비밀번호 사용',
-                            });
-                            
-                            if (!result.success) {
-                                Alert.alert('인증 실패', '백업을 취소합니다.');
-                                return;
-                            }
-                            
-                            const backup = {
-                                emotionHistory,
-                                streak,
-                                language,
-                                exportDate: new Date().toISOString(),
-                                encrypted: false,
-                            };
-                            const uri = FileSystem.documentDirectory + `healingemotion-plain-${new Date().toISOString().slice(0,10)}.ait`;
-                            await FileSystem.writeAsStringAsync(uri, JSON.stringify(backup, null, 2));
-                            
-                            if (await Sharing.isAvailableAsync()) {
-                                await Sharing.shareAsync(uri, {
-                                    mimeType: 'application/octet-stream',
-                                    dialogTitle: '📄 평문 감정 백업 파일 (.ait - 주의 필요)',
+        // 평문 백업 (기존 방식)
+
+        const exportPlainBackup = async () => {
+
+            Alert.alert(
+                language === 'ko' ? '⚠️ 평문 백업 주의' : '⚠️ Plain Backup Warning',
+                language === 'ko'
+                    ? '암호화되지 않은 파일로 백업돼.\n\n개인적인 감정 기록이 포함되어 있으니 안전한 장소에만 보관하고 신뢰할 수 있는 사람과만 공유해!'
+                    : 'This will create an unencrypted backup file.\n\nSince it contains personal emotion records, please store it in a safe place and share only with trusted people.',
+                [
+                    { text: language === 'ko' ? '취소' : 'Cancel', style: 'cancel' },
+                    {
+                        text: language === 'ko' ? '확인 후 백업' : 'Proceed with Backup',
+                        style: 'destructive',
+                        onPress: async () => {
+                            try {
+                                const result = await LocalAuthentication.authenticateAsync({
+                                    promptMessage: language === 'ko' ? '평문 백업을 위해 인증해줘' : 'Authenticate for plain backup',
+                                    fallbackLabel: language === 'ko' ? '비밀번호 사용' : 'Use Password',
                                 });
-                                showToastMessage(language === 'ko' ? '평문 백업이 완료되었습니다' : 'Plain text backup completed');
-                            } else {
-                                Alert.alert('백업 완료', '파일이 생성되었습니다');
+
+                                if (!result.success) {
+                                    Alert.alert(
+                                        language === 'ko' ? '인증 실패' : 'Authentication Failed',
+                                        language === 'ko' ? '백업을 취소했어' : 'Backup cancelled.'
+                                    );
+                                    return;
+                                }
+
+                                
+
+                                const backup = {
+
+                                    emotionHistory,
+
+                                    chatSessions: savedChatSessions,
+
+                                    streak,
+
+                                    language,
+
+                                    exportDate: new Date().toISOString(),
+
+                                    encrypted: false,
+
+                                };
+
+                                const uri = FileSystem.documentDirectory + `healingemotion-plain-${new Date().toISOString().slice(0,10)}.ait`;
+
+                                await FileSystem.writeAsStringAsync(uri, JSON.stringify(backup, null, 2));
+
+                                
+
+                                if (await Sharing.isAvailableAsync()) {
+
+                                    await Sharing.shareAsync(uri, {
+
+                                        mimeType: 'application/octet-stream',
+
+                                        dialogTitle: language === 'ko' ? '📄 평문 감정 백업 파일 (.ait - 주의 필요)' : '📄 Plain emotion backup file (.ait - Handle with care)',
+                                    });
+                                    showToastMessage(language === 'ko' ? '평문 백업 완료!' : 'Plain text backup completed');
+                                } else {
+                                    Alert.alert(
+                                        language === 'ko' ? '백업 완료' : 'Backup Complete',
+                                        language === 'ko' ? '파일이 생성됐어' : 'File has been created'
+                                    );
+                                }
+                            } catch (error) {
+                                if (error.code === 'UserCancel') {
+                                    Alert.alert(
+                                        language === 'ko' ? '취소됨' : 'Cancelled',
+                                        language === 'ko' ? '백업을 취소했어' : 'Backup has been cancelled.'
+                                    );
+                                } else {
+                                    showToastMessage(language === 'ko' ? '백업 중 오류가 났어' : 'Error during backup', 'error');
+
+                                }
+
                             }
-                        } catch (error) {
-                            if (error.code === 'UserCancel') {
-                                Alert.alert('취소됨', '백업을 취소했습니다.');
-                            } else {
-                                showToastMessage('백업 중 오류가 발생했어요', 'error');
-                            }
+
                         }
+
                     }
+
+                ]
+
+            );
+
+        };
+
+    
+
+        // 안전한 파일 복원 (암호화 옵션 포함)
+
+        const importSecureBackup = useCallback(async (password = null) => {
+
+            try {
+
+                let fileContent = importFileContent; // 모달을 통해 들어온 경우
+
+                if (!fileContent) {
+                    showToastMessage(translate('importCanceled'), 'error');
+                    return;
                 }
-            ]
-        );
-    };
 
 
 
-    // 실제 감정 분석 수행 (짧은 입력 체크 없이)
+                const parsedBackup = JSON.parse(fileContent);
+
+                let decryptedData;
+
+    
+
+                if (parsedBackup.encrypted) {
+
+                    if (!password) { // 암호화된 파일인데 비밀번호가 없는 경우
+
+                        setImportFileContent(fileContent);
+
+                        setShowImportPasswordModal(true);
+
+                        return;
+
+                    }
+
+                    decryptedData = JSON.parse(await decryptBackupData_CTR_HMAC(parsedBackup.data, password));
+
+                } else {
+
+                    decryptedData = parsedBackup;
+
+                }
+
+    
+
+                // 기존 데이터 초기화 및 새 데이터 로드
+
+                await clearAllData(); // 기존 AsyncStorage 데이터 삭제
+
+                await deleteAllEncryptedData(); // 기존 SecureStore 데이터 및 키 삭제
+
+                // 메모리 상태 즉시 초기화
+                setEmotionHistory([]);
+                setStreak(0);
+                setAppLockEnabled(false);
+                setCompletedActivities({});
+                setCurrentTab('home');
+                setDailyDiaryCount(0);
+                setDailyAnonymousCount(0);
+                setLastDiaryDate('');
+                setDailyChatTurns(0);
+                setSessionChatTurns(0);
+                setChatHistory([]);
+                setSavedChatSessions([]);
+
+    
+
+                // 새 데이터 적용
+
+                setEmotionHistory(decryptedData.emotionHistory || []);
+
+                setStreak(parseInt(decryptedData.streak) || 0);
+
+                setLanguage(decryptedData.language || 'ko');
+
+                // 채팅 세션 복원 및 마이그레이션
+                if (decryptedData.chatSessions && Array.isArray(decryptedData.chatSessions)) {
+                    const migratedSessions = decryptedData.chatSessions.map(session => {
+                        if (!session.id) {
+                            return {
+                                ...session,
+                                id: (session.timestamp || Date.now()).toString() + Math.random().toString(36).substr(2, 9)
+                            };
+                        }
+                        return session;
+                    });
+                    setSavedChatSessions(migratedSessions);
+                    await saveEncryptedData('chatSessions', migratedSessions);
+                }
+
+                // 기타 필요한 상태값들 업데이트
+
+                await AsyncStorage.setItem('language', decryptedData.language || 'ko');
+
+                await AsyncStorage.setItem('streak', (decryptedData.streak || 0).toString());
+
+                await saveEncryptedData('emotionHistory', decryptedData.emotionHistory || []);
+
+    
+
+                showToastMessage(translate('importSuccess'));
+
+                hapticSuccess();
+
+                setShowImportPasswordModal(false);
+
+                setImportPassword('');
+
+                setImportFileContent(null);
+
+                loadData(); // 데이터 로드 함수 재호출하여 앱 상태 동기화
+
+    
+
+            } catch (error) {
+
+                console.error('Import backup error:', error);
+
+                let errorMessage = translate('importFailed');
+
+                if (error.message.includes('Integrity check failed')) {
+
+                    errorMessage = translate('importFailedWrongPassword');
+
+                } else if (error.message.includes('Unsupported backup format')) {
+
+                    errorMessage = translate('importFailedUnsupportedFormat');
+
+                } else if (error.message.includes('Password must be at least 4 characters')) {
+
+                    errorMessage = translate('importFailedShortPassword');
+
+                }
+
+                showToastMessage(errorMessage, 'error');
+
+                hapticError();
+
+                setShowImportPasswordModal(false);
+
+                setImportPassword('');
+
+                setImportFileContent(null);
+
+            }
+
+        }, [showToastMessage, translate, hapticSuccess, hapticError, importFileContent]);
+
+    
+
+        // 실제 감정 분석 수행 (짧은 입력 체크 없이)
     const performEmotionAnalysis = useCallback(async (inputText) => {
 
         // 일일 제한 체크
@@ -1122,12 +1513,14 @@ export default function App() {
         const hasOpenAIConsent = await checkOpenAIConsent();
         if (!hasOpenAIConsent) {
             Alert.alert(
-                '데이터 전송 동의 필요',
-                'AI 감정 분석을 위해 OpenAI로 데이터를 전송해야 합니다.\n\n동의 화면으로 이동하시겠습니까?',
+                language === 'ko' ? '데이터 전송 동의 필요' : 'Data Transfer Consent Required',
+                language === 'ko'
+                    ? 'AI 감정 분석을 위해 OpenAI로 데이터를 전송해야 해.\n\n동의 화면으로 이동할까?'
+                    : 'Data needs to be sent to OpenAI for AI emotion analysis.\n\nWould you like to go to the consent screen?',
                 [
-                    { text: '취소', style: 'cancel' },
-                    { 
-                        text: '동의하기', 
+                    { text: language === 'ko' ? '취소' : 'Cancel', style: 'cancel' },
+                    {
+                        text: language === 'ko' ? '동의하기' : 'Agree',
                         style: 'default',
                         onPress: () => setShowConsentScreen(true)
                     }
@@ -1146,7 +1539,7 @@ export default function App() {
 
         try {
             // 실제 OpenAI API로 감정 분석
-            const analysis = await analyzeEmotion(inputText);
+            const analysis = await analyzeEmotion(inputText, false, userName);
             
             // 위기상황 체크는 나중에 처리
             const now = new Date();
@@ -1286,7 +1679,7 @@ export default function App() {
         } finally {
             setIsSubmitting(false);
         }
-    }, [isSubmitting, analyzeEmotion, emotionHistory, showToastMessage, selectedQuickEmotion, language, translate]);
+    }, [isSubmitting, analyzeEmotion, emotionHistory, showToastMessage, selectedQuickEmotion, language, translate, userName]);
 
 
     // 결과 시트 닫기
@@ -1314,7 +1707,23 @@ export default function App() {
     useEffect(() => {
         // 앱 시작 이벤트 로깅
         analytics.logAppOpen();
-        
+
+        // iOS 14+ 추적 권한 요청 (Facebook SDK)
+        const initFacebookSDK = async () => {
+            try {
+                if (Platform.OS === 'ios') {
+                    const { status } = await requestTrackingPermissionsAsync();
+                    await Settings.initializeSDK();
+                    Settings.setAdvertiserTrackingEnabled(status === 'granted');
+                } else {
+                    await Settings.initializeSDK();
+                }
+            } catch (error) {
+                console.log('Facebook SDK init error:', error);
+            }
+        };
+        initFacebookSDK();
+
         loadData();
         startAnimations();
         purgeTrash();
@@ -1351,6 +1760,12 @@ export default function App() {
                 setShowPasswordModal(false);
                 return true;
             }
+            if (showImportPasswordModal) {
+                setShowImportPasswordModal(false);
+                setImportPassword('');
+                setImportFileContent(null);
+                return true;
+            }
             if (showResultSheet) {
                 closeResultSheet();
                 return true;
@@ -1365,7 +1780,7 @@ export default function App() {
         });
 
         return () => backHandler.remove();
-    }, [showCrisisModal, showAnonymousModal, showTrash, showDeleteConfirm, showAnonymousConfirm, showResultSheet, showPasswordModal, currentTab, hasUserConsent]);
+    }, [showCrisisModal, showAnonymousModal, showTrash, showDeleteConfirm, showAnonymousConfirm, showResultSheet, showPasswordModal, showImportPasswordModal, currentTab, hasUserConsent]);
 
 
     // 감정 제출 (짧은 입력 체크 포함)
@@ -1404,12 +1819,14 @@ export default function App() {
         const hasOpenAIConsent = await checkOpenAIConsent();
         if (!hasOpenAIConsent) {
             Alert.alert(
-                '데이터 전송 동의 필요',
-                'AI 위로 분석을 위해 OpenAI로 데이터를 전송해야 합니다.\n\n동의 화면으로 이동하시겠습니까?',
+                language === 'ko' ? '데이터 전송 동의 필요' : 'Data Transfer Consent Required',
+                language === 'ko'
+                    ? 'AI 위로 분석을 위해 OpenAI로 데이터를 전송해야 해.\n\n동의 화면으로 이동할까?'
+                    : 'Data needs to be sent to OpenAI for AI comfort analysis.\n\nWould you like to go to the consent screen?',
                 [
-                    { text: '취소', style: 'cancel' },
-                    { 
-                        text: '동의하기', 
+                    { text: language === 'ko' ? '취소' : 'Cancel', style: 'cancel' },
+                    {
+                        text: language === 'ko' ? '동의하기' : 'Agree',
                         style: 'default',
                         onPress: () => setShowConsentScreen(true)
                     }
@@ -1419,7 +1836,7 @@ export default function App() {
         }
         setIsSubmitting(true);
         try {
-            const result = await analyzeEmotion(anonymousText, true);
+            const result = await analyzeEmotion(anonymousText, true, userName);
             setAnonymousResult(result);
             setDailyAnonymousCount(prev => prev + 1);
             showToastMessage(translate('comfortReceived'));
@@ -1429,7 +1846,142 @@ export default function App() {
         } finally {
             setIsSubmitting(false);
         }
-    }, [anonymousText, dailyAnonymousCount, showToastMessage]);
+    }, [anonymousText, dailyAnonymousCount, showToastMessage, userName]);
+
+    // AI 채팅 메시지 전송
+    const sendChatMessage = useCallback(async () => {
+        if (!chatInput.trim()) return;
+
+        // 턴 수 제한 체크
+        const maxDailyTurns = isPremium ? 30 : 10;
+        const maxSessionTurns = isPremium ? 30 : 10;
+
+        if (dailyChatTurns >= maxDailyTurns) {
+            showToastMessage(
+                isPremium
+                    ? (language === 'ko' ? '오늘의 채팅 횟수를 모두 사용했어' : "You've used all daily chat turns.")
+                    : (language === 'ko' ? '오늘의 무료 채팅 횟수를 모두 사용했어. 프리미엄으로 업그레이드할래?' : "You've used all free daily turns. Upgrade to premium?"),
+                'error'
+            );
+            return;
+        }
+
+        if (sessionChatTurns >= maxSessionTurns) {
+            showToastMessage(
+                language === 'ko' ? '이번 세션의 채팅 횟수가 끝났어. 새로 시작하려면 모달을 닫았다 다시 열어줘!' : "Session turns ended. Close and reopen to start new session.",
+                'error'
+            );
+            return;
+        }
+
+        // OpenAI 데이터 전송 동의 확인
+        const hasOpenAIConsent = await checkOpenAIConsent();
+        if (!hasOpenAIConsent) {
+            Alert.alert(
+                language === 'ko' ? '데이터 전송 동의 필요' : 'Data Transfer Consent Required',
+                language === 'ko'
+                    ? 'AI 채팅을 위해 OpenAI로 데이터를 전송해야 해.\n\n동의 화면으로 이동할까?'
+                    : 'We need to send data to OpenAI for AI chat.\n\nGo to consent screen?',
+                [
+                    { text: language === 'ko' ? '취소' : 'Cancel', style: 'cancel' },
+                    {
+                        text: language === 'ko' ? '동의하기' : 'Agree',
+                        style: 'default',
+                        onPress: () => setShowConsentScreen(true)
+                    }
+                ]
+            );
+            return;
+        }
+
+        setIsSubmitting(true);
+        const userMessage = chatInput.trim();
+        setChatInput('');
+
+        try {
+            // 사용자 메시지 추가
+            const newUserMsg = { role: 'user', text: userMessage, timestamp: Date.now() };
+            setChatHistory(prev => [...prev, newUserMsg]);
+
+            // 사용자 메시지 스크롤
+            setTimeout(() => {
+                chatScrollViewRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+
+            // AI 응답 요청 (채팅 히스토리 포함)
+            const aiResponse = await chatWithAI(userMessage, chatHistory, language);
+
+            // AI 메시지 추가
+            const newAiMsg = { role: 'ai', text: aiResponse, timestamp: Date.now() };
+            setChatHistory(prev => [...prev, newAiMsg]);
+
+            // 스크롤을 최신 메시지로 이동
+            setTimeout(() => {
+                chatScrollViewRef.current?.scrollToEnd({ animated: true });
+            }, 100);
+
+            // 턴 수 증가 및 저장
+            const newDailyTurns = dailyChatTurns + 1;
+            const newSessionTurns = sessionChatTurns + 1;
+            setDailyChatTurns(newDailyTurns);
+            setSessionChatTurns(newSessionTurns);
+
+            // AsyncStorage에 턴 수 저장
+            await AsyncStorage.setItem('dailyChatTurns', newDailyTurns.toString());
+
+            // 턴 종료 알림
+            const remainingDailyTurns = maxDailyTurns - newDailyTurns;
+            const remainingSessionTurns = maxSessionTurns - newSessionTurns;
+
+            if (remainingDailyTurns === 0) {
+                showToastMessage(
+                    isPremium
+                        ? (language === 'ko' ? '오늘의 채팅 횟수를 모두 사용했어 ✨' : "You've used all daily chat turns ✨")
+                        : (language === 'ko' ? '오늘의 무료 채팅 횟수를 모두 사용했어 ✨' : "You've used all free daily turns ✨"),
+                    'info'
+                );
+            } else if (remainingSessionTurns === 0) {
+                showToastMessage(
+                    language === 'ko'
+                        ? '이번 세션의 채팅이 끝났어. 새로 시작하려면 뒤로가기 후 다시 열어줘 💬'
+                        : "Session ended. Go back and reopen to start new session 💬",
+                    'info'
+                );
+            } else if (remainingDailyTurns <= 2) {
+                // 남은 턴이 2개 이하면 알림
+                showToastMessage(
+                    language === 'ko'
+                        ? `남은 턴: ${remainingDailyTurns}회`
+                        : `Remaining turns: ${remainingDailyTurns}`,
+                    'info'
+                );
+            }
+
+            hapticSuccess();
+        } catch (error) {
+            console.error('Chat error:', error);
+
+            // 에러 타입에 따라 다른 메시지 표시
+            let errorMessage = '';
+            if (error.message && error.message.includes('Network request failed')) {
+                errorMessage = language === 'ko'
+                    ? '인터넷 연결을 확인해봐 📡'
+                    : 'Please check your internet connection 📡';
+            } else if (error.message && error.message.includes('API key')) {
+                errorMessage = language === 'ko'
+                    ? 'API 키 오류야. 설정을 확인해봐!'
+                    : 'API key error. Please check settings.';
+            } else {
+                errorMessage = language === 'ko'
+                    ? '잠시 후 다시 시도해봐 🔄'
+                    : 'Please try again later 🔄';
+            }
+
+            showToastMessage(errorMessage, 'error');
+        } finally {
+            setIsSubmitting(false);
+        }
+    }, [chatInput, chatHistory, dailyChatTurns, sessionChatTurns, isPremium, language, showToastMessage]);
 
     // 주간 리포트 공유 (실제 구현)
     const shareWeeklyReport = useCallback(async () => {
@@ -1439,7 +1991,10 @@ export default function App() {
         );
 
         if (weeklyData.length === 0) {
-            Alert.alert('아직 기록이 부족해요', '일주일간 기록해보시면 리포트를 만들어드릴게요!');
+            Alert.alert(
+                language === 'ko' ? '아직 기록이 부족해요' : 'Not enough records yet',
+                language === 'ko' ? '일주일간 기록해보시면 리포트를 만들어드릴게요!' : 'Record for a week and we\'ll create a report for you!'
+            );
             return;
         }
 
@@ -1592,7 +2147,7 @@ export default function App() {
         setStars(newStars);
     }, []);
 
-    // 별빛 애니메이션 제어 (조건 변경 시)
+// 별빛 애니메이션 제어 (조건 변경 시)
     useEffect(() => {
         if (stars.length > 0 && currentTab === 'home' && !showResultSheet) {
             startStarAnimation();
@@ -1650,7 +2205,7 @@ export default function App() {
         );
     };
 
-    // 토스트 컴포넌트
+    // 토스트 컴포넌트 (Premium Dark)
     const ToastMessage = () => {
         if (!showToast.show) return null;
 
@@ -1658,176 +2213,296 @@ export default function App() {
             <Animated.View style={[
                 styles.toast,
                 { transform: [{ translateY: toastAnim }] },
-                showToast.type === 'error' && styles.toastError
             ]}>
-                <LinearGradient
-                    colors={showToast.type === 'error' ? ['#FEF2F2', '#FCA5A5'] : ['#F0FDF4', '#86EFAC']}
-                    style={styles.toastGradient}
-                >
+                <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: showToast.type === 'error' ? 'rgba(220, 38, 38, 0.15)' : 'rgba(201, 169, 98, 0.15)',
+                    paddingVertical: 14,
+                    paddingHorizontal: 20,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: showToast.type === 'error' ? 'rgba(220, 38, 38, 0.3)' : 'rgba(201, 169, 98, 0.3)',
+                }}>
                     <Ionicons
                         name={showToast.type === 'error' ? 'alert-circle' : 'checkmark-circle'}
-                        size={20}
-                        color={showToast.type === 'error' ? '#DC2626' : '#059669'}
+                        size={18}
+                        color={showToast.type === 'error' ? '#F87171' : DESIGN.colors.primary}
                     />
-                    <Text style={[
-                        styles.toastText,
-                        { color: showToast.type === 'error' ? '#DC2626' : '#059669' }
-                    ]}>
+                    <Text style={{
+                        marginLeft: 10,
+                        fontSize: 14,
+                        fontWeight: '500',
+                        color: showToast.type === 'error' ? '#F87171' : DESIGN.colors.primary,
+                    }}>
                         {showToast.message}
                     </Text>
-                </LinearGradient>
+                </View>
             </Animated.View>
         );
     };
 
-    // 새로운 홈 탭 (완전 리디자인)
-    const renderHomeTab = () => (
-            <View style={{ flex: 1 }}>
+    // 홈 탭 (Premium Minimal Dark)
+    const renderHomeTab = () => {
+        // 스트릭 계산
+        const calculateStreak = () => {
+            if (emotionHistory.length === 0) return 0;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            let streak = 0;
+            let currentDate = new Date(today);
+            while (true) {
+                const dateStr = currentDate.toISOString().split('T')[0];
+                const hasEntry = emotionHistory.some(entry => {
+                    const entryDate = new Date(entry.date).toISOString().split('T')[0];
+                    return entryDate === dateStr;
+                });
+                if (hasEntry) {
+                    streak++;
+                    currentDate.setDate(currentDate.getDate() - 1);
+                } else if (streak === 0) {
+                    currentDate.setDate(currentDate.getDate() - 1);
+                    const yesterdayStr = currentDate.toISOString().split('T')[0];
+                    const hasYesterdayEntry = emotionHistory.some(entry => {
+                        const entryDate = new Date(entry.date).toISOString().split('T')[0];
+                        return entryDate === yesterdayStr;
+                    });
+                    if (!hasYesterdayEntry) break;
+                } else {
+                    break;
+                }
+            }
+            return streak;
+        };
+
+        const streak = calculateStreak();
+        const totalEntries = emotionHistory.length;
+        const isActive = currentInputText.trim().length > 0;
+
+        return (
+            <View style={{ flex: 1, backgroundColor: '#0D1117' }}>
                 <ScrollView
                     ref={scrollViewRef}
                     style={{ flex: 1 }}
-                    contentContainerStyle={{ 
-                        flexGrow: 1, 
-                        justifyContent: showResultSheet ? 'flex-start' : 'center',
-                        paddingTop: 60,
-                        paddingBottom: 120,
-                        minHeight: showResultSheet ? 'auto' : '100%'
+                    contentContainerStyle={{
+                        flexGrow: 1,
+                        justifyContent: 'center',
+                        paddingHorizontal: 28,
+                        paddingVertical: 40,
                     }}
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="on-drag"
                     showsVerticalScrollIndicator={false}
-                    scrollEnabled={true}
-                    bounces={true}
                     onScrollBeginDrag={() => Keyboard.dismiss()}>
-                {/* 중앙 정렬된 메인 컨텐츠 */}
-                <View style={styles.centeredMainContent}>
-                    {/* 헤더 영역 */}
-                    <View style={styles.newHomeHeader}>
-                        <Text style={styles.newHomeGreeting}>
-                            {sessionGreeting}
+
+                    {/* 미니멀 헤더 */}
+                    <View style={{ marginBottom: 40 }}>
+                        <Text style={{
+                            fontSize: 28,
+                            fontWeight: '200',
+                            color: '#FFFFFF',
+                            letterSpacing: 0.5,
+                            lineHeight: 38,
+                            textAlign: 'center',
+                        }}>
+                            {translate('homeGreeting')}
                         </Text>
                     </View>
 
-                    {/* 점선 말풍선 */}
-                    <Animated.View style={[styles.dottedBubble, { opacity: cardFadeAnim }]}>
-                        <Text style={styles.dottedBubbleText}>
-                            {sessionGreetingSub}
-                        </Text>
-                    </Animated.View>
-
-                    {/* 스트릭 배너 */}
-                    {streak > 0 && (
-                        <Animated.View style={[styles.newStreakBanner, { opacity: cardFadeAnim }]}>
-                            <TouchableOpacity
-                                onPress={() => {
-                                    console.log('스트릭 모달 열기');
-                                }}
-                                activeOpacity={0.8}
-                            >
-                                <LinearGradient
-                                    colors={['#E6C547', '#D4B642']} // 채도 15% 감소
-                                    style={styles.newStreakGradient}
-                                >
-                                    <Ionicons name="flame" size={18} color="#fff" />
-                                    <Text style={styles.newStreakText}>
-                                        {translate('streakMessage', { days: streak })}
-                                    </Text>
-                                </LinearGradient>
-                            </TouchableOpacity>
-                        </Animated.View>
-                    )}
-
-                    {/* 입력 카드 - 단순화 */}
-                    <Animated.View 
-                        style={[styles.newInputSection, { opacity: cardFadeAnim }]}
-                        pointerEvents="box-none"
-                    >
-                        <EmotionInput
-                            t={t}
-                            onSubmit={submitEmotion}
-                            disabled={isSubmitting}
-                            resetSeq={inputResetSeq}
-                            dailyCount={dailyDiaryCount}
-                            language={language}
-                            onTextChange={handleInputTextChange}
-                            currentText={currentInputText}
+                    {/* 입력 영역 - 미니멀 */}
+                    <View style={{
+                        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                        borderRadius: 16,
+                        padding: 24,
+                        marginBottom: 24,
+                        minHeight: 160,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255, 255, 255, 0.06)',
+                    }}>
+                        <TextInput
+                            ref={inputRef}
+                            style={{
+                                fontSize: 16,
+                                fontWeight: '300',
+                                color: '#FFFFFF',
+                                lineHeight: 26,
+                                minHeight: 120,
+                            }}
+                            placeholder={translate('homeSubtitle')}
+                            placeholderTextColor="rgba(255, 255, 255, 0.25)"
+                            value={currentInputText}
+                            onChangeText={handleInputTextChange}
+                            multiline={true}
+                            textAlignVertical="top"
                         />
-                    </Animated.View>
+                    </View>
 
-                    {/* 메인 CTA - 카드 밖으로 */}
-                    <Animated.View style={[styles.mainCTASection, { opacity: cardFadeAnim }]}>
-                        <TouchableOpacity
-                            onPress={() => submitEmotion(currentInputText)}
-                            disabled={isSubmitting || !currentInputText.trim()}
-                            style={styles.mainCTAButton}
-                        >
-                            <LinearGradient
-                                colors={(!currentInputText.trim() || isSubmitting) ? ['#6B7280', '#9CA3AF'] : ['#EC4899', '#8B5CF6']}
-                                style={styles.mainCTAGradient}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                            >
-                                {isSubmitting ? (
-                                    <>
-                                        <ActivityIndicator color="#fff" size="small" />
-                                        <Text style={styles.mainCTAText}>{translate('submitPending')}</Text>
-                                    </>
-                                ) : (
-                                    <>
-                                        <MaterialCommunityIcons name="clipboard-pulse-outline" size={24} color="#fff" />
-                                        <Text style={styles.mainCTAText}>{translate('submitEmotion')}</Text>
-                                    </>
-                                )}
-                            </LinearGradient>
-                        </TouchableOpacity>
-                        
-                        {/* 도움말 한 줄만 */}
-                        <Text style={styles.mainCTAHelper}>
+                    {/* CTA 버튼 - 골드 액센트 */}
+                    <TouchableOpacity
+                        onPress={() => submitEmotion(currentInputText)}
+                        disabled={isSubmitting || !isActive}
+                        activeOpacity={0.7}
+                        style={{
+                            marginBottom: 16,
+                        }}
+                    >
+                        <View style={{
+                            backgroundColor: isActive ? DESIGN.colors.primary : 'rgba(255, 255, 255, 0.05)',
+                            paddingVertical: 16,
+                            borderRadius: 12,
+                            alignItems: 'center',
+                            borderWidth: isActive ? 0 : 1,
+                            borderColor: 'rgba(255, 255, 255, 0.08)',
+                        }}>
+                            {isSubmitting ? (
+                                <ActivityIndicator color={isActive ? '#0D1117' : '#fff'} size="small" />
+                            ) : (
+                                <Text style={{
+                                    fontSize: 14,
+                                    fontWeight: '600',
+                                    color: isActive ? '#0D1117' : 'rgba(255, 255, 255, 0.4)',
+                                    letterSpacing: 1,
+                                    textTransform: 'uppercase',
+                                }}>
+                                    {translate('record')}
+                                </Text>
+                            )}
+                        </View>
+                    </TouchableOpacity>
+
+                    {/* 보안 텍스트 */}
+                    <View style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: 48,
+                    }}>
+                        <Ionicons name="shield-checkmark-outline" size={14} color="rgba(255, 255, 255, 0.3)" />
+                        <Text style={{
+                            fontSize: 13,
+                            color: 'rgba(255, 255, 255, 0.3)',
+                            fontWeight: '400',
+                            marginLeft: 6,
+                            letterSpacing: 0.3,
+                        }}>
                             {translate('helperText')}
                         </Text>
-                    </Animated.View>
-                </View>
+                    </View>
 
-                {/* 간소화된 트렌드 (최근 7일) */}
-                {emotionHistory.length > 0 && (
-                    <Animated.View style={[styles.newTrendSection, { opacity: cardFadeAnim }]}>
-                        <LinearGradient
-                            colors={['rgba(255,255,255,0.25)', 'rgba(255,255,255,0.15)']}
-                            style={styles.newTrendCard}
-                        >
-                            <ImprovedTrendChart />
-                        </LinearGradient>
-                    </Animated.View>
-                )}
+                    {/* 구분선 */}
+                    <View style={{
+                        height: 1,
+                        backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                        marginBottom: 32,
+                    }} />
 
-                
-                {/* 하단 여백 (플러스 버튼과의 거리 확보) */}
-                <View style={{ height: 80 }} />
+                    {/* 통계 영역 - 미니멀 */}
+                    <View style={{ flexDirection: 'row', marginBottom: 32 }}>
+                        {/* 스트릭 */}
+                        <View style={{ flex: 1, alignItems: 'center' }}>
+                            <Text style={{
+                                fontSize: 32,
+                                fontWeight: '200',
+                                color: '#FFFFFF',
+                                marginBottom: 4,
+                            }}>
+                                {streak}
+                            </Text>
+                            <Text style={{
+                                fontSize: 11,
+                                fontWeight: '400',
+                                color: 'rgba(255, 255, 255, 0.35)',
+                                letterSpacing: 1,
+                                textTransform: 'uppercase',
+                            }}>
+                                {language === 'ko' ? '연속' : 'Streak'}
+                            </Text>
+                        </View>
+
+                        {/* 구분선 */}
+                        <View style={{
+                            width: 1,
+                            backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                        }} />
+
+                        {/* 총 기록 */}
+                        <View style={{ flex: 1, alignItems: 'center' }}>
+                            <Text style={{
+                                fontSize: 32,
+                                fontWeight: '200',
+                                color: '#FFFFFF',
+                                marginBottom: 4,
+                            }}>
+                                {totalEntries}
+                            </Text>
+                            <Text style={{
+                                fontSize: 11,
+                                fontWeight: '400',
+                                color: 'rgba(255, 255, 255, 0.35)',
+                                letterSpacing: 1,
+                                textTransform: 'uppercase',
+                            }}>
+                                {language === 'ko' ? '기록' : 'Entries'}
+                            </Text>
+                        </View>
+                    </View>
+
+                    {/* AI 상담 버튼 */}
+                    <TouchableOpacity
+                        onPress={() => setShowAnonymousModal(true)}
+                        activeOpacity={0.7}
+                        style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                            borderRadius: 12,
+                            padding: 20,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255, 255, 255, 0.06)',
+                        }}
+                    >
+                        <View>
+                            <Text style={{
+                                fontSize: 15,
+                                fontWeight: '400',
+                                color: '#FFFFFF',
+                                marginBottom: 4,
+                            }}>
+                                {language === 'ko' ? '고민 털어놓기' : 'Open up'}
+                            </Text>
+                            <Text style={{
+                                fontSize: 12,
+                                fontWeight: '400',
+                                color: 'rgba(255, 255, 255, 0.35)',
+                            }}>
+                                {language === 'ko' ? '편하게 이야기해요' : 'Talk freely'}
+                            </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color="rgba(255, 255, 255, 0.25)" />
+                    </TouchableOpacity>
+
                 </ScrollView>
-
-                {/* 플로팅 액션 버튼들 */}
-                <FloatingActions
-                    onComfortPress={() => setShowAnonymousModal(true)}
-                    language={language}
-                />
             </View>
-    );
+        );
+    };
 
     // 기록 탭 (개선됨)
     // 기록 탭 (홈화면 스타일로 리디자인)
     const renderHistoryTab = () => {
         const filteredHistory = getFilteredHistory();
-        
+        const hasAnyRecords = emotionHistory.filter(e => !e.deletedAt).length > 0;
+
         return (
             <View style={{ flex: 1 }}>
                 <ScrollView
                     style={{ flex: 1 }}
-                    contentContainerStyle={filteredHistory.length === 0 ? {
+                    contentContainerStyle={!hasAnyRecords ? {
                         flexGrow: 1,
                         justifyContent: 'center',
                         paddingTop: 60,
                         paddingBottom: 120
-                    } : { 
+                    } : {
                         paddingTop: 20,
                         paddingBottom: 120
                     }}
@@ -1836,104 +2511,190 @@ export default function App() {
                     showsVerticalScrollIndicator={false}
                     scrollEnabled={true}
                     bounces={true}>
-                    
+
                     {/* 메인 컨텐츠 */}
                     <View style={{ paddingHorizontal: 20, alignItems: 'center' }}>
-                        {/* 기록이 없을 때 */}
-                        {filteredHistory.length === 0 ? (
-                            <Animated.View style={[styles.dottedBubble, { opacity: cardFadeAnim, transform: [{ scale: 1.1 }] }]}>
-                                <Text style={[styles.dottedBubbleText, { fontSize: 16 }]}>
-                                    {translate('emptyHistory')}
+                        {/* 기록이 하나도 없을 때 - 따뜻한 빈 상태 */}
+                        {!hasAnyRecords ? (
+                            <Animated.View style={{ opacity: cardFadeAnim, alignItems: 'center', paddingHorizontal: 40 }}>
+                                <View style={{
+                                    width: 80,
+                                    height: 80,
+                                    borderRadius: 40,
+                                    backgroundColor: 'rgba(201, 169, 98, 0.1)',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    marginBottom: 24
+                                }}>
+                                    <Ionicons name="book-outline" size={36} color="#C9A962" />
+                                </View>
+                                <Text style={{
+                                    color: '#FFFFFF',
+                                    fontSize: 20,
+                                    fontWeight: '300',
+                                    letterSpacing: 0.5,
+                                    marginBottom: 12,
+                                    textAlign: 'center'
+                                }}>
+                                    {language === 'ko' ? '아직 기록이 없어' : 'No entries yet'}
+                                </Text>
+                                <Text style={{
+                                    color: 'rgba(255, 255, 255, 0.5)',
+                                    fontSize: 15,
+                                    fontWeight: '400',
+                                    textAlign: 'center',
+                                    lineHeight: 24
+                                }}>
+                                    {language === 'ko'
+                                        ? '오늘 하루는 어땠어?\n첫 번째 기록을 남겨봐'
+                                        : 'How was your day?\nStart your first entry'}
                                 </Text>
                             </Animated.View>
                         ) : (
-                            /* 헤더 영역 - 기록이 있을 때만 표시 */
+                            /* 헤더 영역 - 기록이 있을 때 표시 */
                             <>
                                 <View style={styles.newHomeHeader}>
-                                    <Text style={[styles.newHomeGreeting, { fontSize: 30 }]}>
+                                    <Text style={[styles.newHomeGreeting, { fontSize: 28, fontWeight: '200' }]}>
                                         {translate('tabHistory')}
                                     </Text>
                                 </View>
                                 {/* 검색 영역 */}
-                                <Animated.View 
-                                    style={{ 
-                                        opacity: cardFadeAnim, 
-                                        width: '90%',            // 기록 카드랑 동일
-                                        alignSelf: 'center', 
-                                        marginVertical: 16 
+                                <Animated.View
+                                    style={{
+                                        opacity: cardFadeAnim,
+                                        width: '100%',
+                                        alignSelf: 'center',
+                                        marginVertical: 16
                                     }}
                                 >
-                                    <View style={{ 
-                                        width: '100%',           // 내부도 꽉 차게
-                                        backgroundColor: 'rgba(255,255,255,0.1)', 
-                                        borderRadius: 16, 
-                                        padding: 16, 
-                                        marginBottom: 20, 
-                                        borderWidth: 1, 
-                                        borderColor: 'rgba(255, 255, 255, 0.3)',
+                                    <View style={{
+                                        width: '100%',
+                                        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                                        borderRadius: 12,
+                                        padding: 14,
+                                        marginBottom: 20,
+                                        borderWidth: 1,
+                                        borderColor: 'rgba(255, 255, 255, 0.1)',
                                         flexDirection: 'row',
                                         alignItems: 'center'
                                     }}>
-                                        <Ionicons name="search" size={20} color="rgba(255, 255, 255, 0.6)" />
+                                        <Ionicons name="search" size={18} color="rgba(255, 255, 255, 0.5)" />
                                         <TextInput
-                                            style={[styles.searchInput, { flex: 1, marginLeft: 12, color: '#fff', fontSize: 16 }]}
+                                            style={{ flex: 1, marginLeft: 12, color: '#fff', fontSize: 15, fontWeight: '400' }}
                                             placeholder={translate('searchPlaceholder')}
-                                            placeholderTextColor="#999"
+                                            placeholderTextColor="rgba(255, 255, 255, 0.7)"
                                             value={searchQuery}
                                             onChangeText={setSearchQuery}
                                         />
-                                        <TouchableOpacity 
+                                        <TouchableOpacity
                                             onPress={() => setShowTrash(true)}
-                                            style={{ marginLeft: 12 }}
+                                            style={{ marginLeft: 12, padding: 4 }}
                                         >
-                                            <Ionicons name="trash-outline" size={20} color="rgba(255, 255, 255, 0.6)" />
+                                            <Ionicons name="trash-outline" size={18} color="rgba(255, 255, 255, 0.4)" />
                                         </TouchableOpacity>
                                     </View>
                                 </Animated.View>
 
+                                {/* 검색 결과 없을 때 */}
+                                {filteredHistory.length === 0 && searchQuery.length > 0 && (
+                                    <Animated.View style={{ opacity: cardFadeAnim, alignItems: 'center', paddingVertical: 40 }}>
+                                        <Ionicons name="search-outline" size={48} color="rgba(255, 255, 255, 0.2)" />
+                                        <Text style={{
+                                            color: 'rgba(255, 255, 255, 0.5)',
+                                            fontSize: 15,
+                                            fontWeight: '400',
+                                            marginTop: 16,
+                                            textAlign: 'center'
+                                        }}>
+                                            {language === 'ko' ? '검색 결과가 없어' : 'No results found'}
+                                        </Text>
+                                    </Animated.View>
+                                )}
+
                                 {/* 기록 카드들 */}
                                 {filteredHistory.slice(0, 10).map((item, index) => (
-                                    <Animated.View key={item.id} style={{ opacity: cardFadeAnim, marginBottom: 16, width: '90%', alignSelf: 'center' }}>
-                                        <LinearGradient
-                                            colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.08)']}
-                                            style={{ borderRadius: 16, padding: 20, width: '100%', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.3)' }}
+                                    <Animated.View key={item.id} style={{ opacity: cardFadeAnim, marginBottom: 16, width: '100%', alignSelf: 'center' }}>
+                                        <View
+                                            style={{
+                                                backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                                                borderRadius: 16,
+                                                padding: 20,
+                                                width: '100%',
+                                                borderWidth: 1,
+                                                borderColor: 'rgba(255, 255, 255, 0.06)'
+                                            }}
                                         >
                                             {/* 기록 헤더 */}
-                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                                <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>
+                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                                                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '400', letterSpacing: 0.3 }}>
                                                     {formatLocalizedDate(item.date, {
                                                         month: 'short',
                                                         day: 'numeric',
                                                         weekday: 'short'
                                                     })}
                                                 </Text>
-                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                                    <View style={[styles.emotionBadge, { backgroundColor: 'rgba(102, 126, 234, 0.5)' }]}>
-                                                        <Text style={[styles.emotionBadgeText, { fontSize: 12 }]}>
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                                    <View style={{
+                                                        backgroundColor: 'rgba(201, 169, 98, 0.15)',
+                                                        paddingHorizontal: 12,
+                                                        paddingVertical: 6,
+                                                        borderRadius: 20,
+                                                        borderWidth: 1,
+                                                        borderColor: 'rgba(201, 169, 98, 0.25)'
+                                                    }}>
+                                                        <Text style={{ color: '#C9A962', fontSize: 12, fontWeight: '500' }}>
                                                             {language === 'ko' ? (item.emotion_ko || item.emotion) : (item.emotion_en || item.emotion)}
                                                         </Text>
                                                     </View>
                                                     <TouchableOpacity onPress={() => confirmDelete(item.id)}>
-                                                        <Ionicons name="trash-outline" size={18} color="rgba(255,255,255,0.5)" />
+                                                        <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.3)" />
                                                     </TouchableOpacity>
                                                 </View>
                                             </View>
-                                            
+
                                             {/* 기록 내용 */}
-                                            <Text style={{ color: '#fff', fontSize: 16, lineHeight: 22, marginBottom: 12 }}>
+                                            <Text style={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: 15, lineHeight: 24, fontWeight: '400' }}>
                                                 {item.text}
                                             </Text>
-                                            
+
                                             {/* 위로의 말 */}
                                             {item.comfort && (
-                                                <View style={{ marginTop: 12, padding: 16, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.25)' }}>
-                                                    <Text style={{ color: '#ffffff', fontSize: 16, marginBottom: 8 }}>✨ {translate('comfortWords')}</Text>
-                                                    <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, lineHeight: 20 }}>
+                                                <View style={{
+                                                    marginTop: 16,
+                                                    padding: 16,
+                                                    backgroundColor: 'rgba(201, 169, 98, 0.08)',
+                                                    borderRadius: 12,
+                                                    borderWidth: 1,
+                                                    borderColor: 'rgba(201, 169, 98, 0.15)'
+                                                }}>
+                                                    <Text style={{ color: '#C9A962', fontSize: 13, marginBottom: 8, fontWeight: '500' }}>
+                                                        {language === 'ko' ? '✨ 맞춤 분석' : '✨ Analysis'}
+                                                    </Text>
+                                                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, lineHeight: 22, fontWeight: '400' }}>
                                                         {language === 'ko' ? (item.comfort_ko || item.comfort) : (item.comfort_en || item.comfort)}
                                                     </Text>
                                                 </View>
                                             )}
-                                        </LinearGradient>
+
+                                            {/* 해결 방안 */}
+                                            {item.solution && (
+                                                <View style={{
+                                                    marginTop: 12,
+                                                    padding: 16,
+                                                    backgroundColor: 'rgba(201, 169, 98, 0.05)',
+                                                    borderRadius: 12,
+                                                    borderWidth: 1,
+                                                    borderColor: 'rgba(201, 169, 98, 0.1)'
+                                                }}>
+                                                    <Text style={{ color: '#C9A962', fontSize: 13, marginBottom: 8, fontWeight: '500' }}>
+                                                        {language === 'ko' ? '💡 해결 방안' : '💡 Solutions'}
+                                                    </Text>
+                                                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, lineHeight: 22, fontWeight: '400' }}>
+                                                        {language === 'ko' ? (item.solution_ko || item.solution) : (item.solution_en || item.solution)}
+                                                    </Text>
+                                                </View>
+                                            )}
+                                        </View>
                                     </Animated.View>
                                 ))}
                             </>
@@ -1987,13 +2748,13 @@ export default function App() {
                 <View style={{ paddingHorizontal: 20, alignItems: 'center' }}>
                     {/* 헤더 영역 */}
                     <View style={styles.newHomeHeader}>
-                        <Text style={[styles.newHomeGreeting, { fontSize: 30 }]}>
+                        <Text style={[styles.newHomeGreeting, { fontSize: 28, fontWeight: '200' }]}>
                             {translate('insights')}
                         </Text>
                     </View>
 
                     {/* 주간 리포트 카드 */}
-                    <Animated.View style={{ opacity: cardFadeAnim, marginBottom: 16, width: '90%', alignSelf: 'center' }}>
+                    <Animated.View style={{ opacity: cardFadeAnim, marginBottom: 16, width: '100%', alignSelf: 'center' }}>
                         <WeeklyReport 
                             emotionHistory={emotionHistory}
                             streak={streak}
@@ -2002,28 +2763,28 @@ export default function App() {
                     </Animated.View>
 
                     {/* 스트릭 캘린더 */}
-                    <Animated.View style={{ opacity: cardFadeAnim, marginBottom: 16, width: '90%', alignSelf: 'center' }}>
-                        <LinearGradient
-                            colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.08)']}
-                            style={{ borderRadius: 16, padding: 20, width: '100%', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.3)' }}
+                    <Animated.View style={{ opacity: cardFadeAnim, marginBottom: 16, width: '100%', alignSelf: 'center' }}>
+                        <View
+                            style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 16, padding: 20, width: '100%', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.06)' }}
                         >
-                            <StreakCalendar 
+                            <StreakCalendar
                                 emotionHistory={emotionHistory}
                                 streak={streak}
                                 recoveryTokens={recoveryTokens}
                                 language={language}
                             />
-                        </LinearGradient>
+                        </View>
                     </Animated.View>
 
                     {/* 주간 감정 분포 */}
-                    <Animated.View style={{ opacity: cardFadeAnim, marginBottom: 16, width: '90%', alignSelf: 'center' }}>
-                        <LinearGradient
-                            colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.08)']}
-                            style={{ borderRadius: 16, padding: 20, width: '100%', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.3)' }}
+                    <Animated.View style={{ opacity: cardFadeAnim, marginBottom: 16, width: '100%', alignSelf: 'center' }}>
+                        <View
+                            style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 16, padding: 20, width: '100%', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.06)' }}
                         >
-                        <View style={{ alignItems: 'center', marginBottom: 8 }}>
-                            <Text style={[styles.insightTitle, { color: '#fff', fontSize: 19, textAlign: 'center' }]}>{translate('emotionDistribution')}</Text>
+                        <View style={{ alignItems: 'center', marginBottom: 16 }}>
+                            <Text style={{ color: '#fff', fontSize: 20, fontWeight: '300', textAlign: 'center', letterSpacing: 0.5 }}>
+                                {translate('emotionDistribution')}
+                            </Text>
                             {totalRecords > 0 && totalRecords < 3 && (
                                 <View style={{ marginTop: 8 }}>
                                     <SparseSample language={language} />
@@ -2032,8 +2793,25 @@ export default function App() {
                         </View>
 
                         {totalRecords === 0 ? (
-                            <View style={styles.emptyInsight}>
-                                <Text style={[styles.emptyInsightText, null]}>
+                            <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                                <View style={{
+                                    width: 56,
+                                    height: 56,
+                                    borderRadius: 28,
+                                    backgroundColor: 'rgba(201, 169, 98, 0.1)',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    marginBottom: 16
+                                }}>
+                                    <Ionicons name="bar-chart-outline" size={24} color="#C9A962" />
+                                </View>
+                                <Text style={{
+                                    color: 'rgba(255, 255, 255, 0.6)',
+                                    fontSize: 14,
+                                    fontWeight: '400',
+                                    textAlign: 'center',
+                                    lineHeight: 22
+                                }}>
                                     {translate('weeklyRecordPrompt')}
                                 </Text>
                             </View>
@@ -2048,7 +2826,9 @@ export default function App() {
                                                 <Text style={[styles.emotionStatLabel, null]}>{label}</Text>
                                             <View style={styles.emotionStatBar}>
                                                 <LinearGradient
-                                                    colors={['#667eea', '#764ba2']}
+                                                    colors={['#C9A962', '#B8985A']}
+                                                    start={{ x: 0, y: 0 }}
+                                                    end={{ x: 1, y: 0 }}
                                                     style={[
                                                         styles.emotionStatFill,
                                                         { width: `${(count / totalRecords) * 100}%` }
@@ -2056,7 +2836,7 @@ export default function App() {
                                                 />
                                             </View>
                                                 <Text style={[styles.emotionStatCount, null]}>
-                                                    {language === 'ko' ? `${count}회` : `${count} ${count === 1 ? 'time' : 'times'}`} ({Math.round((count / totalRecords) * 100)}%)
+                                                    {language === 'ko' ? `${count}회` : `${count} ${count === 1 ? 'time' : 'times'}`}
                                                 </Text>
                                             </View>
                                         );
@@ -2072,68 +2852,94 @@ export default function App() {
                                             return language === 'ko' ? meta.ko : meta.en;
                                         })()}
                                     </Text>
-                                    <Text style={styles.insightSummaryText}>
-                                        {translate('totalPreciousRecords', { count: totalRecords })}
-                                    </Text>
                                 </View>
                             </>
                         )}
-                        </LinearGradient>
+                        </View>
                     </Animated.View>
 
                     {/* 나를 살린 문장 */}
                     {recentData.length > 0 && (
-                        <Animated.View style={{ opacity: cardFadeAnim, marginBottom: 16, width: '90%', alignSelf: 'center' }}>
-                            <LinearGradient
-                                colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.08)']}
-                                style={{ borderRadius: 16, padding: 20, width: '100%', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.3)' }}
+                        <Animated.View style={{ opacity: cardFadeAnim, marginBottom: 16, width: '100%', alignSelf: 'center' }}>
+                            <View
+                                style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 16, padding: 20, width: '100%', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.06)' }}
                             >
-                                <View style={styles.quoteSectionHeader}>
-                                    <Text style={[styles.insightTitle, { textAlign: 'center', color: '#fff', fontSize: 19 }]}>{translate('weeklyQuote')}</Text>
-                                </View>
-
-                                <View style={styles.quoteCenterBox}>
-                                    <Text style={styles.savedQuoteText}>
-                                        "{language === 'ko' ? (recentData[0]?.comfort_ko || recentData[0]?.comfort || '당신의 마음을 소중히 여기세요.') : (recentData[0]?.comfort_en || recentData[0]?.comfort || 'Take care of your precious heart.')}"
+                                <View style={{ marginBottom: 16 }}>
+                                    <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 13, fontWeight: '400', textAlign: 'center', letterSpacing: 0.5 }}>
+                                        {translate('weeklyQuote')}
                                     </Text>
                                 </View>
-                            </LinearGradient>
+
+                                <View style={{ paddingVertical: 8, paddingHorizontal: 16 }}>
+                                    <Text style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: 15, fontWeight: '400', lineHeight: 26, textAlign: 'center', fontStyle: 'italic' }}>
+                                        "{language === 'ko' ? (recentData[0]?.comfort_ko || recentData[0]?.comfort || '네 마음을 소중히 여겨') : (recentData[0]?.comfort_en || recentData[0]?.comfort || 'Take care of your precious heart.')}"
+                                    </Text>
+                                </View>
+                            </View>
                         </Animated.View>
                     )}
 
                     {/* 행동 추천 */}
                     {recentData.length > 0 && (
-                        <Animated.View style={{ opacity: cardFadeAnim, marginBottom: 16, width: '90%', alignSelf: 'center' }}>
-                            <LinearGradient
-                                colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.08)']}
-                                style={{ borderRadius: 16, padding: 20, width: '100%', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.3)' }}
+                        <Animated.View style={{ opacity: cardFadeAnim, marginBottom: 16, width: '100%', alignSelf: 'center' }}>
+                            <View
+                                style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 16, padding: 20, width: '100%', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.06)' }}
                             >
-                            <Text style={[styles.insightTitle, { color: '#fff', fontSize: 19 }]}>{translate('weeklyRecommendedActivities')}</Text>
-                            <View style={styles.recommendedActions}>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 13, fontWeight: '400', marginBottom: 16, letterSpacing: 0.5 }}>
+                                {translate('weeklyRecommendedActivities')}
+                            </Text>
+                            <View style={{ gap: 12 }}>
                                 {getDailyActivities.map((activity) => (
-                                    <TouchableOpacity 
+                                    <TouchableOpacity
                                         key={activity.id}
-                                        style={styles.actionItem}
+                                        style={{
+                                            flexDirection: 'row',
+                                            alignItems: 'center',
+                                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                                            borderRadius: 12,
+                                            padding: 14,
+                                            borderWidth: 1,
+                                            borderColor: completedActivities[activity.id] ? 'rgba(201, 169, 98, 0.3)' : 'rgba(255, 255, 255, 0.06)'
+                                        }}
                                         onPress={() => toggleActivityCompletion(activity.id)}
                                     >
-                                        <View style={styles.actionIcon}>
-                                            <Ionicons name={activity.icon} size={20} color="rgba(255, 255, 255, 0.8)" />
+                                        <View style={{
+                                            width: 36,
+                                            height: 36,
+                                            borderRadius: 18,
+                                            backgroundColor: completedActivities[activity.id] ? 'rgba(201, 169, 98, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            marginRight: 12
+                                        }}>
+                                            <Ionicons name={activity.icon} size={18} color={completedActivities[activity.id] ? '#C9A962' : 'rgba(255, 255, 255, 0.5)'} />
                                         </View>
-                                        <Text style={styles.actionText}>
+                                        <Text style={{
+                                            flex: 1,
+                                            color: completedActivities[activity.id] ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.7)',
+                                            fontSize: 14,
+                                            fontWeight: '400'
+                                        }}>
                                             {activity.text}
                                         </Text>
-                                        <TouchableOpacity 
-                                            style={[styles.checkbox, completedActivities[activity.id] && styles.checkboxCompleted]}
-                                            onPress={() => toggleActivityCompletion(activity.id)}
-                                        >
+                                        <View style={{
+                                            width: 24,
+                                            height: 24,
+                                            borderRadius: 12,
+                                            backgroundColor: completedActivities[activity.id] ? '#C9A962' : 'transparent',
+                                            borderWidth: 1.5,
+                                            borderColor: completedActivities[activity.id] ? '#C9A962' : 'rgba(255, 255, 255, 0.2)',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                        }}>
                                             {completedActivities[activity.id] && (
-                                                <Ionicons name="checkmark" size={16} color="#ffffff" />
+                                                <Ionicons name="checkmark" size={14} color="#0D1117" />
                                             )}
-                                        </TouchableOpacity>
+                                        </View>
                                     </TouchableOpacity>
                                 ))}
                             </View>
-                            </LinearGradient>
+                            </View>
                         </Animated.View>
                     )}
 
@@ -2144,63 +2950,58 @@ export default function App() {
 
     // 설정 탭 (대폭 개선)
     const renderSettingsTab = () => (
-        <ScrollView 
-            keyboardShouldPersistTaps="never" 
-            style={styles.tabContent} 
-            showsVerticalScrollIndicator={false} 
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'} 
-            onTouchStart={Keyboard.dismiss} 
+        <ScrollView
+            keyboardShouldPersistTaps="never"
+            style={styles.tabContent}
+            showsVerticalScrollIndicator={false}
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            onTouchStart={Keyboard.dismiss}
             onScrollBeginDrag={Keyboard.dismiss}
             contentContainerStyle={{
-                paddingTop: 60,
+                paddingTop: 20,
                 paddingBottom: 120,
                 paddingHorizontal: 20,
                 alignItems: 'center'
             }}
         >
-            <Text style={[styles.tabTitle, { fontSize: 30, fontWeight: 'bold', color: 'white', marginBottom: 30, textAlign: 'center' }]}>{translate('settings')}</Text>
+            <View style={styles.newHomeHeader}>
+                <Text style={[styles.newHomeGreeting, { fontSize: 28, fontWeight: '200' }]}>{translate('settings')}</Text>
+            </View>
 
             {/* 앱 설정 */}
             <Animated.View style={[{
-                width: '90%',
-                backgroundColor: 'transparent',
-                borderRadius: 20,
-                marginBottom: 20,
-                overflow: 'hidden'
+                width: '100%',
+                backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: 16,
+                marginBottom: 16,
+                overflow: 'hidden',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.06)'
             }, { opacity: cardFadeAnim }]}>
-                <LinearGradient
-                    colors={['rgba(255, 255, 255, 0.18)', 'rgba(255, 255, 255, 0.08)']}
-                    style={{
-                        flex: 1,
-                        borderWidth: 1.5,
-                        borderColor: 'rgba(255, 255, 255, 0.25)',
-                        borderRadius: 20,
-                        padding: 20
-                    }}
-                >
-                <Text style={[styles.settingCategoryTitle, null]}>{translate('appSettings')}</Text>
-
+                <View style={{ padding: 20 }}>
+                <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 12, fontWeight: '500', marginBottom: 16, letterSpacing: 0.5, textTransform: 'uppercase' }}>{translate('appSettings')}</Text>
 
                 <View style={styles.settingRowVertical}>
                     <View style={styles.settingInfo}>
-                        <Ionicons name="language-outline" size={20} color="rgba(255, 255, 255, 0.8)" />
-                        <Text style={[styles.settingTitle, null]}>{translate('language')}</Text>
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            <Ionicons name="language-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
+                        </View>
+                        <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('language')}</Text>
                     </View>
                     <View style={styles.languageOptions}>
                         <TouchableOpacity
                             style={[
                                 styles.languageOption,
                                 language === 'ko' && styles.activeOption,
-                                                            ]}
+                            ]}
                             onPress={() => setLanguage('ko')}
                         >
                             {language === 'ko' && (
-                                <Ionicons name="checkmark-circle" size={18} color="#7dd3fc" />
+                                <Ionicons name="checkmark-circle" size={16} color="#C9A962" />
                             )}
                             <Text style={[
                                 styles.languageText,
                                 language === 'ko' && styles.activeText,
-                                null
                             ]}>
                                 한국어
                             </Text>
@@ -2210,16 +3011,15 @@ export default function App() {
                             style={[
                                 styles.languageOption,
                                 language === 'en' && styles.activeOption,
-                                                            ]}
+                            ]}
                             onPress={() => setLanguage('en')}
                         >
                             {language === 'en' && (
-                                <Ionicons name="checkmark-circle" size={18} color="#7dd3fc" />
+                                <Ionicons name="checkmark-circle" size={16} color="#C9A962" />
                             )}
                             <Text style={[
                                 styles.languageText,
                                 language === 'en' && styles.activeText,
-                                null
                             ]}>
                                 English
                             </Text>
@@ -2227,55 +3027,93 @@ export default function App() {
                     </View>
                 </View>
 
-                </LinearGradient>
+                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
+
+                <TouchableOpacity
+                    style={styles.settingRowButton}
+                    onPress={() => {
+                        setTempNameInput(userName);
+                        setShowNameChangeModal(true);
+                    }}
+                >
+                    <View style={styles.settingInfo}>
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            <Ionicons name="person-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
+                        </View>
+                        <View>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>
+                                {language === 'ko' ? '이름 변경' : 'Change Name'}
+                            </Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>
+                                {userName || (language === 'ko' ? '설정되지 않음' : 'Not set')}
+                            </Text>
+                        </View>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
+                </TouchableOpacity>
+
+                </View>
             </Animated.View>
 
             {/* 데이터 관리 */}
             <Animated.View style={[{
-                width: '90%',
-                backgroundColor: 'transparent',
-                borderRadius: 20,
-                marginBottom: 20,
-                overflow: 'hidden'
+                width: '100%',
+                backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: 16,
+                marginBottom: 16,
+                overflow: 'hidden',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.06)'
             }, { opacity: cardFadeAnim }]}>
-                <LinearGradient
-                    colors={['rgba(255, 255, 255, 0.18)', 'rgba(255, 255, 255, 0.08)']}
-                    style={{
-                        flex: 1,
-                        borderWidth: 1.5,
-                        borderColor: 'rgba(255, 255, 255, 0.25)',
-                        borderRadius: 20,
-                        padding: 20
-                    }}
-                >
-                <Text style={[styles.settingCategoryTitle, null]}>{translate('dataManagement')}</Text>
+                <View style={{ padding: 20 }}>
+                <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 12, fontWeight: '500', marginBottom: 16, letterSpacing: 0.5, textTransform: 'uppercase' }}>{translate('dataManagement')}</Text>
 
-                <TouchableOpacity 
-                    style={styles.settingRowButton} 
+                <TouchableOpacity
+                    style={styles.settingRowButton}
                     onPress={exportSecureBackup}
                 >
                     <View style={styles.settingInfo}>
-                        <Ionicons name="cloud-upload-outline" size={20} color="rgba(255, 255, 255, 0.8)" />
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            <Ionicons name="cloud-upload-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
+                        </View>
                         <View>
-                            <Text style={[styles.settingTitle, null]}>{translate('dataBackup')}</Text>
-                            <Text style={[styles.settingDesc, null]}>{translate('fileExport')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('dataBackup')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('fileExport')}</Text>
                         </View>
                     </View>
-                    <Ionicons name="chevron-forward" size={20} color="#999" />
+                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
                 </TouchableOpacity>
 
-                <View style={styles.settingDivider} />
+                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
+
+                <TouchableOpacity
+                    style={styles.settingRowButton}
+                    onPress={() => importSecureBackup()}
+                >
+                    <View style={styles.settingInfo}>
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            <Ionicons name="cloud-download-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
+                        </View>
+                        <View>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('dataRestore')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('fileImport')}</Text>
+                        </View>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
+                </TouchableOpacity>
+
+                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
 
                 <TouchableOpacity
                     style={styles.settingRowButton}
                     onPress={async () => {
                         try {
                             const userData = await exportUserData();
-                            
+
                             const dataStr = JSON.stringify(userData, null, 2);
                             const uri = FileSystem.documentDirectory + `my-emotion-data-${new Date().toISOString().slice(0,10)}.json`;
                             await FileSystem.writeAsStringAsync(uri, dataStr, { encoding: FileSystem.EncodingType.UTF8 });
-                            
+
                             if (await Sharing.isAvailableAsync()) {
                                 await Sharing.shareAsync(uri, {
                                     mimeType: 'application/json',
@@ -2284,50 +3122,62 @@ export default function App() {
                             }
                             showToastMessage(language === 'ko' ? '데이터 내보내기 완료' : 'Data export completed');
                         } catch (error) {
-                            Alert.alert('오류', '데이터 내보내기 중 오류가 발생했습니다.');
+                            Alert.alert(
+                                language === 'ko' ? '오류' : 'Error',
+                                language === 'ko' ? '데이터 내보내기 중 오류가 났어' : 'An error occurred during data export.'
+                            );
                         }
                     }}
                 >
                     <View style={styles.settingInfo}>
-                        <Ionicons name="download-outline" size={20} color="rgba(255, 255, 255, 0.8)" />
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            <Ionicons name="download-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
+                        </View>
                         <View>
-                            <Text style={[styles.settingTitle, null]}>{translate('exportMyData')}</Text>
-                            <Text style={[styles.settingDesc, null]}>{translate('dataPortabilityDesc')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('exportMyData')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('dataPortabilityDesc')}</Text>
                         </View>
                     </View>
-                    <Ionicons name="chevron-forward" size={20} color="#999" />
+                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
                 </TouchableOpacity>
 
-                <View style={styles.settingDivider} />
+                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
 
                 <TouchableOpacity
                     style={styles.settingRowButton}
                     onPress={() => {
                         Alert.alert(
-                            '동의 철회',
-                            '⚠️ 주의사항\n\n• OpenAI 데이터 전송 동의를 철회합니다\n• AI 감정 분석 기능을 사용할 수 없습니다\n• 기존 감정 기록은 유지됩니다\n• 언제든 다시 동의할 수 있습니다\n\n정말 철회하시겠습니까?',
+                            language === 'ko' ? '동의 철회' : 'Revoke Consent',
+                            language === 'ko'
+                                ? '⚠️ 주의사항\n\n• OpenAI 데이터 전송 동의를 철회해\n• AI 감정 분석 기능을 사용할 수 없어\n• 기존 감정 기록은 유지돼\n• 언제든 다시 동의할 수 있어\n\n정말 철회할까?'
+                                : '⚠️ Warning\n\n• OpenAI data transfer consent will be revoked\n• AI emotion analysis will be unavailable\n• Existing records will be kept\n• You can re-consent anytime\n\nAre you sure?',
                             [
-                                { text: '취소', style: 'cancel' },
+                                { text: language === 'ko' ? '취소' : 'Cancel', style: 'cancel' },
                                 {
-                                    text: '철회',
+                                    text: language === 'ko' ? '철회' : 'Revoke',
                                     style: 'destructive',
                                     onPress: async () => {
                                         try {
                                             await revokeConsent();
-                                            
+
                                             // 동의 상태만 변경, 데이터는 유지
                                             setHasUserConsent(false);
-                                            
+
                                             // 안내 메시지
                                             Alert.alert(
-                                                '동의 철회 완료',
-                                                '개인정보 처리 동의가 철회되었습니다.\n\n• 기존 감정 기록은 안전하게 보관됩니다\n• AI 기능 사용 시 다시 동의를 요청합니다\n• 설정에서 언제든 재동의할 수 있습니다',
-                                                [{ text: '확인', style: 'default' }]
+                                                language === 'ko' ? '동의 철회 완료' : 'Consent Revoked',
+                                                language === 'ko'
+                                                    ? '개인정보 처리 동의가 철회됐어.\n\n• 기존 감정 기록은 안전하게 보관돼\n• AI 기능 사용 시 다시 동의를 요청해\n• 설정에서 언제든 재동의할 수 있어'
+                                                    : 'Privacy consent has been revoked.\n\n• Existing records are safely stored\n• Re-consent will be requested when using AI\n• You can re-consent in settings anytime',
+                                                [{ text: language === 'ko' ? '확인' : 'OK', style: 'default' }]
                                             );
-                                            
-                                            showToastMessage(language === 'ko' ? '동의가 철회되었습니다 (데이터는 보존됨)' : 'Consent revoked (data preserved)');
+
+                                            showToastMessage(language === 'ko' ? '동의가 철회됐어 (데이터는 보존돼)' : 'Consent revoked (data preserved)');
                                         } catch (error) {
-                                            Alert.alert('오류', '동의 철회 중 오류가 발생했습니다.');
+                                            Alert.alert(
+                                                language === 'ko' ? '오류' : 'Error',
+                                                language === 'ko' ? '동의 철회 중 오류가 났어' : 'An error occurred while revoking consent.'
+                                            );
                                         }
                                     }
                                 }
@@ -2336,21 +3186,23 @@ export default function App() {
                     }}
                 >
                     <View style={styles.settingInfo}>
-                        <Ionicons name="shield-checkmark-outline" size={20} color="#FFA500" />
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(201, 169, 98, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            <Ionicons name="shield-checkmark-outline" size={18} color="#C9A962" />
+                        </View>
                         <View>
-                            <Text style={[styles.settingTitle, null]}>{translate('privacyConsentManagement')}</Text>
-                            <Text style={[styles.settingDesc, null]}>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('privacyConsentManagement')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>
                                 {hasUserConsent ? translate('revokeConsent') : translate('reAgree')}
                             </Text>
                         </View>
                     </View>
-                    <Ionicons name="chevron-forward" size={20} color="#999" />
+                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
                 </TouchableOpacity>
 
                 {/* 동의하지 않은 상태에서 다시 동의하기 버튼 */}
                 {!hasUserConsent && (
                     <>
-                        <View style={styles.settingDivider} />
+                        <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
                         <TouchableOpacity
                             style={styles.settingRowButton}
                             onPress={() => {
@@ -2358,18 +3210,20 @@ export default function App() {
                             }}
                         >
                             <View style={styles.settingInfo}>
-                                <Ionicons name="checkmark-circle-outline" size={20} color="#4ADE80" />
+                                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(74, 222, 128, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                                    <Ionicons name="checkmark-circle-outline" size={18} color="#4ADE80" />
+                                </View>
                                 <View>
-                                    <Text style={[styles.settingTitle, { color: '#4ADE80' }]}>개인정보 처리 재동의</Text>
-                                    <Text style={[styles.settingDesc, null]}>AI 감정 분석 기능 사용하기</Text>
+                                    <Text style={{ color: '#4ADE80', fontSize: 15, fontWeight: '400' }}>개인정보 처리 재동의</Text>
+                                    <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>AI 감정 분석 기능 사용하기</Text>
                                 </View>
                             </View>
-                            <Ionicons name="chevron-forward" size={20} color="#999" />
+                            <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
                         </TouchableOpacity>
                     </>
                 )}
 
-                <View style={styles.settingDivider} />
+                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
 
                 <TouchableOpacity
                     style={styles.settingRowButton}
@@ -2389,41 +3243,43 @@ export default function App() {
                     }}
                 >
                     <View style={styles.settingInfo}>
-                        <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(239, 68, 68, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                        </View>
                         <View>
-                            <Text style={[styles.settingTitle, { color: '#EF4444' }]}>{translate('deleteAllData')}</Text>
-                            <Text style={[styles.settingDesc, null]}>{translate('deleteAllDataDesc')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('deleteAllData')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('deleteAllDataDesc')}</Text>
                         </View>
                     </View>
-                    <Ionicons name="chevron-forward" size={20} color="#999" />
+                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
                 </TouchableOpacity>
 
-                <View style={styles.settingDivider} />
+                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
 
-                <TouchableOpacity 
-                    style={styles.settingRowButton} 
+                <TouchableOpacity
+                    style={styles.settingRowButton}
                     onPress={async () => {
                         try {
                             if (!appLockEnabled) {
                                 // 켜기 플로우
                                 const hasHardware = await LocalAuthentication.hasHardwareAsync();
                                 const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-                                
+
                                 if (!hasHardware) {
                                     Alert.alert(translate('appLock'), translate('noHardware'));
                                     return;
                                 }
-                                
+
                                 if (!isEnrolled) {
                                     Alert.alert(translate('appLock'), translate('notEnrolled'));
                                     return;
                                 }
-                                
+
                                 const result = await LocalAuthentication.authenticateAsync({
                                     promptMessage: translate('appLockSetPrompt'),
                                     cancelLabel: translate('cancel'),
                                 });
-                                
+
                                 if (result.success) {
                                     await SecureStore.setItemAsync('appLockEnabled', 'true');
                                     setAppLockEnabled(true);
@@ -2435,7 +3291,7 @@ export default function App() {
                                     promptMessage: translate('appLockDisablePrompt'),
                                     cancelLabel: translate('cancel'),
                                 });
-                                
+
                                 if (result.success) {
                                     await SecureStore.deleteItemAsync('appLockEnabled');
                                     setAppLockEnabled(false);
@@ -2448,105 +3304,114 @@ export default function App() {
                     }}
                 >
                     <View style={styles.settingInfo}>
-                        <Ionicons name="finger-print-outline" size={20} color="rgba(255, 255, 255, 0.8)" />
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            <Ionicons name="finger-print-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
+                        </View>
                         <View>
-                            <Text style={[styles.settingTitle, null]}>{translate('appLock')}</Text>
-                            <Text style={[styles.settingDesc, null]}>{appLockEnabled ? translate('appLockOn') : translate('appLockOff')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('appLock')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{appLockEnabled ? translate('appLockOn') : translate('appLockOff')}</Text>
                         </View>
                     </View>
-                    <Ionicons name="chevron-forward" size={20} color="#999" />
+                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
                 </TouchableOpacity>
-                </LinearGradient>
+                </View>
             </Animated.View>
 
             {/* 도움 및 지원 */}
             <Animated.View style={[{
-                width: '90%',
-                backgroundColor: 'transparent',
-                borderRadius: 20,
-                marginBottom: 20,
-                overflow: 'hidden'
+                width: '100%',
+                backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: 16,
+                marginBottom: 16,
+                overflow: 'hidden',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.06)'
             }, { opacity: cardFadeAnim }]}>
-                <LinearGradient
-                    colors={['rgba(255, 255, 255, 0.18)', 'rgba(255, 255, 255, 0.08)']}
-                    style={{
-                        flex: 1,
-                        borderWidth: 1.5,
-                        borderColor: 'rgba(255, 255, 255, 0.25)',
-                        borderRadius: 20,
-                        padding: 20
-                    }}
-                >
-                <Text style={[styles.settingCategoryTitle, null]}>{translate('helpSupport')}</Text>
-
+                <View style={{ padding: 20 }}>
+                <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 12, fontWeight: '500', marginBottom: 16, letterSpacing: 0.5, textTransform: 'uppercase' }}>{translate('helpSupport')}</Text>
 
                 <TouchableOpacity
                     style={styles.settingRowButton}
                     onPress={() => setShowCrisisModal(true)}
                 >
                     <View style={styles.settingInfo}>
-                        <Ionicons name="help-circle-outline" size={20} color="#EF4444" />
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(201, 169, 98, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            <Ionicons name="heart-outline" size={18} color="#C9A962" />
+                        </View>
                         <View>
-                            <Text style={[styles.settingTitle, { color: '#EF4444' }]}>{translate('crisisSupport')}</Text>
-                            <Text style={[styles.settingDesc, null]}>{translate('crisisHelpline')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('crisisSupport')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('crisisHelpline')}</Text>
                         </View>
                     </View>
-                    <Ionicons name="chevron-forward" size={20} color="#999" />
+                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
                 </TouchableOpacity>
 
-                <View style={styles.settingDivider} />
+                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
 
-                <TouchableOpacity style={styles.settingRowButton} onPress={() => openSafeURL('mailto:jaewon3418@gmail.com', '메일 앱을 열 수 없어요. 직접 jaewon3418@gmail.com로 연락해주세요.')}>
+                <TouchableOpacity style={styles.settingRowButton} onPress={() => openSafeURL('mailto:jaewon3418@gmail.com', '메일 앱을 열 수 없어. 직접 jaewon3418@gmail.com로 연락해줘!')}>
                     <View style={styles.settingInfo}>
-                        <Ionicons name="mail-outline" size={20} color="rgba(255, 255, 255, 0.8)" />
+                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            <Ionicons name="mail-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
+                        </View>
                         <View>
-                            <Text style={[styles.settingTitle, null]}>{translate('contactUs')}</Text>
-                            <Text style={[styles.settingDesc, null]}>{translate('feedbackRequest')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('contactUs')}</Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('feedbackRequest')}</Text>
                         </View>
                     </View>
-                    <Ionicons name="chevron-forward" size={20} color="#999" />
+                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
                 </TouchableOpacity>
-                </LinearGradient>
+                </View>
             </Animated.View>
 
             {/* 법적 정보 */}
-            <Animated.View style={[styles.legalCard, { opacity: cardFadeAnim }]}>
-                <Text style={[styles.legalText, null]}>{translate('crisisDisclaimer')}</Text>
-                <View style={styles.legalLinks}>
-                    <TouchableOpacity onPress={() => Alert.alert(
-                        translate('privacyPolicyTitle'),
-                        translate('privacyPolicyContent'),
-                        [{ text: '확인', style: 'default' }]
-                    )}>
-                        <Text style={styles.linkText}>{translate('privacyPolicyTitle')}</Text>
+            <Animated.View style={[{ width: '100%', marginBottom: 40, paddingTop: 24 }, { opacity: cardFadeAnim }]}>
+                <Text style={{ color: 'rgba(255, 255, 255, 0.35)', fontSize: 12, fontWeight: '400', textAlign: 'center', lineHeight: 18, marginBottom: 20, paddingHorizontal: 20 }}>{translate('crisisDisclaimer')}</Text>
+
+                <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 8 }}>
+                    <TouchableOpacity
+                        style={{ paddingHorizontal: 12, paddingVertical: 8 }}
+                        onPress={() => Alert.alert(
+                            translate('privacyPolicyTitle'),
+                            translate('privacyPolicyContent'),
+                            [{ text: language === 'ko' ? '확인' : 'OK', style: 'default' }]
+                        )}
+                    >
+                        <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 12, fontWeight: '400' }}>{translate('privacyPolicyTitle')}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => Alert.alert(
-                        translate('termsTitle'),
-                        translate('termsContent'),
-                        [{ text: '확인', style: 'default' }]
-                    )}>
-                        <Text style={styles.linkText}>{translate('termsTitle')}</Text>
+
+                    <Text style={{ color: 'rgba(255, 255, 255, 0.2)', fontSize: 12 }}>·</Text>
+
+                    <TouchableOpacity
+                        style={{ paddingHorizontal: 12, paddingVertical: 8 }}
+                        onPress={() => Alert.alert(
+                            translate('termsTitle'),
+                            translate('termsContent'),
+                            [{ text: language === 'ko' ? '확인' : 'OK', style: 'default' }]
+                        )}
+                    >
+                        <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 12, fontWeight: '400' }}>{translate('termsTitle')}</Text>
+                    </TouchableOpacity>
+
+                    <Text style={{ color: 'rgba(255, 255, 255, 0.2)', fontSize: 12 }}>·</Text>
+
+                    <TouchableOpacity
+                        style={{ paddingHorizontal: 12, paddingVertical: 8 }}
+                        onPress={() => Alert.alert(
+                            '⚠️ 모든 데이터 삭제',
+                            '동의 상태를 포함한 모든 데이터를 삭제해서 최초 실행 상태로 돌아가.\n\n이 작업은 되돌릴 수 없어!',
+                            [
+                                { text: translate('cancel'), style: 'cancel' },
+                                {
+                                    text: '완전 삭제',
+                                    style: 'destructive',
+                                    onPress: resetAllData
+                                }
+                            ]
+                        )}
+                    >
+                        <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 12, fontWeight: '400' }}>{translate('deleteAccount')}</Text>
                     </TouchableOpacity>
                 </View>
-
-                <TouchableOpacity
-                    style={styles.deleteAccountButton}
-                    onPress={() => Alert.alert(
-                        '⚠️ 모든 데이터 삭제',
-                        '동의 상태를 포함한 모든 데이터를 삭제하여 최초 실행 상태로 돌아갑니다.\n\n이 작업은 되돌릴 수 없습니다.',
-                        [
-                            { text: translate('cancel'), style: 'cancel' },
-                            { 
-                                text: '완전 삭제', 
-                                style: 'destructive', 
-                                onPress: resetAllData
-                            }
-                        ]
-                    )}
-                >
-                    <Text style={styles.deleteAccountText}>{translate('deleteAccount')}</Text>
-                </TouchableOpacity>
-
             </Animated.View>
         </ScrollView>
     );
@@ -2554,19 +3419,16 @@ export default function App() {
     // 초기화 중일 때 로딩 화면
     if (isInitializing) {
         return (
-            <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]} edges={[]}>
-                <StatusBar barStyle="light-content" backgroundColor="#667eea" translucent={false} />
-                <ImageBackground
-                    source={require('../assets/night-sky-bg.png')}
-                    style={styles.background}
-                    resizeMode="cover"
-                >
-                    <ActivityIndicator size="large" color="#667eea" />
-                    <Text style={{ color: 'rgba(255, 255, 255, 0.8)', marginTop: 16, fontSize: 16 }}>
-                        {language === 'ko' ? '로딩중...' : 'Loading...'}
-                    </Text>
-                </ImageBackground>
-            </SafeAreaView>
+            <LinearGradient
+                colors={['#1a1a1a', '#2d2d2d', '#1a1a1a']}
+                style={[styles.background, { flex: 1, justifyContent: 'center', alignItems: 'center' }]}
+            >
+                <StatusBar barStyle="light-content" hidden={true} />
+                <ActivityIndicator size="large" color="#C9A962" />
+                <Text style={{ color: 'rgba(201, 169, 98, 0.9)', marginTop: 16, fontSize: 16 }}>
+                    {language === 'ko' ? '로딩중...' : 'Loading...'}
+                </Text>
+            </LinearGradient>
         );
     }
 
@@ -2578,7 +3440,16 @@ export default function App() {
                     if (__DEV__) console.log('🔵 동의 완료');
                     setShowConsentScreen(false);
                     setHasUserConsent(true);
-                    
+
+                    // 저장된 이름 확인
+                    const savedName = await AsyncStorage.getItem('userName');
+                    if (savedName) {
+                        setUserName(savedName);
+                    } else {
+                        // 이름이 없으면 입력 모달 표시
+                        setShowNameInputModal(true);
+                    }
+
                     // 동의 후 바로 메인 데이터 로드
                     loadData();
                 }}
@@ -2594,78 +3465,351 @@ export default function App() {
     // 앱 잠금 화면
     if (isAppLocked) {
         return (
-            <SafeAreaView style={styles.container} edges={[]}>
-                    <StatusBar barStyle="light-content" backgroundColor="#667eea" translucent={false} />
-                    <ImageBackground
-                        source={require('../assets/night-sky-bg.png')}
-                        style={styles.background}
-                        resizeMode="cover"
-                    >
-                    <View style={styles.lockScreen}>
-                        <Ionicons name="lock-closed" size={80} color="rgba(255, 255, 255, 0.8)" />
-                        <Text style={styles.lockTitle}>앱이 잠겨있습니다</Text>
-                        <Text style={styles.lockDescription}>사용하려면 인증이 필요합니다</Text>
-
-                        <TouchableOpacity
-                            style={styles.unlockButton}
-                            onPress={async () => {
-                                try {
-                                    const result = await LocalAuthentication.authenticateAsync({
-                                        promptMessage: '앱을 사용하려면 인증해주세요',
-                                        cancelLabel: '취소',
-                                        disableDeviceFallback: false,
-                                    });
-
-                                    if (result.success) {
-                                        setIsAppLocked(false);
-                                    }
-                                } catch (error) {
-                                    showToastMessage('인증에 실패했습니다', 'error');
-                                }
-                            }}
-                        >
-                            <LinearGradient
-                                colors={['#667eea', '#764ba2']}
-                                style={styles.gradientButton}
-                            >
-                                <Ionicons name="finger-print" size={24} color="#fff" />
-                                <Text style={styles.unlockButtonText}>잠금 해제</Text>
-                            </LinearGradient>
-                        </TouchableOpacity>
+            <SafeAreaView style={[styles.container, { backgroundColor: '#0D1117' }]} edges={[]}>
+                <StatusBar barStyle="light-content" hidden={true} />
+                <View style={styles.lockScreen}>
+                    <View style={styles.lockIconContainer}>
+                        <Ionicons name="lock-closed" size={48} color="#C9A962" />
                     </View>
-                </ImageBackground>
+                    <Text style={styles.lockTitle}>
+                        {language === 'ko' ? '앱이 잠겨있어' : 'App is Locked'}
+                    </Text>
+                    <Text style={styles.lockDescription}>
+                        {language === 'ko' ? '사용하려면 인증이 필요해' : 'Authentication required to continue'}
+                    </Text>
+
+                    <TouchableOpacity
+                        style={styles.unlockButton}
+                        onPress={async () => {
+                            try {
+                                const result = await LocalAuthentication.authenticateAsync({
+                                    promptMessage: language === 'ko' ? '앱을 사용하려면 인증해줘' : 'Authenticate to use the app',
+                                    cancelLabel: language === 'ko' ? '취소' : 'Cancel',
+                                    disableDeviceFallback: false,
+                                });
+
+                                if (result.success) {
+                                    setIsAppLocked(false);
+                                }
+                            } catch (error) {
+                                showToastMessage(
+                                    language === 'ko' ? '인증에 실패했어' : 'Authentication failed',
+                                    'error'
+                                );
+                            }
+                        }}
+                    >
+                        <LinearGradient
+                            colors={['#C9A962', '#B8985A']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={styles.lockGradientButton}
+                        >
+                            <Ionicons name="finger-print" size={22} color="#0D1117" />
+                            <Text style={styles.unlockButtonText}>
+                                {language === 'ko' ? '잠금 해제' : 'Unlock'}
+                            </Text>
+                        </LinearGradient>
+                    </TouchableOpacity>
+                </View>
             </SafeAreaView>
         );
     }
-    
+
+    // AI 채팅 화면 (전체 화면)
+    if (showAnonymousModal) {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: '#0D1117' }]} edges={[]}>
+                <StatusBar barStyle="light-content" hidden={true} />
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    style={{ flex: 1, backgroundColor: '#0D1117' }}
+                >
+                    <View style={styles.chatScreenContainer}>
+                            {/* 헤더 */}
+                            <View style={styles.chatScreenHeader}>
+                                <TouchableOpacity
+                                    onPress={async () => {
+                                        // 채팅 기록 저장/업데이트
+                                        if (chatHistory.length > 0) {
+                                            const firstUserMessage = chatHistory.find(msg => msg.role === 'user')?.text || '';
+
+                                            // 사용자 메시지가 실제로 있을 때만 저장
+                                            if (firstUserMessage.trim()) {
+                                                if (currentSessionId) {
+                                                    // 기존 세션 업데이트
+                                                    setSavedChatSessions(prev =>
+                                                        prev.map(session =>
+                                                            session.id === currentSessionId
+                                                                ? { ...session, messages: chatHistory, timestamp: Date.now() }
+                                                                : session
+                                                        )
+                                                    );
+                                                } else {
+                                                    // 새 세션 생성
+                                                    const title = await summarizeChat(chatHistory, language);
+                                                    const newSession = {
+                                                        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                                                        timestamp: Date.now(),
+                                                        messages: chatHistory,
+                                                        title: title
+                                                    };
+                                                    setSavedChatSessions(prev => [newSession, ...prev]);
+                                                }
+                                            }
+                                        }
+
+                                        setShowAnonymousModal(false);
+                                        setChatHistory([]);
+                                        setChatInput('');
+                                        setSessionChatTurns(0);
+                                        setCurrentSessionId(null); // 초기화
+                                    }}
+                                    style={styles.chatBackButton}
+                                >
+                                    <Ionicons name="arrow-back" size={22} color="rgba(255, 255, 255, 0.7)" />
+                                </TouchableOpacity>
+                                <View style={{ flex: 1, justifyContent: 'center' }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+                                        <Ionicons name="chatbubble-ellipses" size={20} color="#C9A962" />
+                                        <Text style={styles.chatScreenTitle}>
+                                            {language === 'ko' ? '고민 상담소' : 'Worry Counseling'}
+                                        </Text>
+                                    </View>
+                                </View>
+                                <TouchableOpacity
+                                    onPress={() => setShowChatHistory(true)}
+                                    style={styles.chatBackButton}
+                                >
+                                    <Ionicons name="menu" size={22} color="rgba(255, 255, 255, 0.7)" />
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* 남은 턴 표시 */}
+                            {(() => {
+                                const remainingTurns = (isPremium ? 30 : 10) - dailyChatTurns;
+                                if (remainingTurns <= 0) {
+                                    return (
+                                        <View style={styles.noTurnsContainer}>
+                                            <Text style={styles.noTurnsText}>{translate('noTurnsLeft')}</Text>
+                                            <Text style={styles.comeBackText}>{translate('comeBackTomorrow')}</Text>
+                                        </View>
+                                    );
+                                }
+                                return (
+                                    <Text style={styles.chatScreenSubtitle}>
+                                        {language === 'ko' ? '남은 턴' : 'Turns left'}: {remainingTurns}
+                                    </Text>
+                                );
+                            })()}
+
+                            {/* 채팅 히스토리 */}
+                            <ScrollView
+                                ref={chatScrollViewRef}
+                                style={styles.chatScreenHistory}
+                                contentContainerStyle={styles.chatScreenHistoryContent}
+                                showsVerticalScrollIndicator={false}
+                                onContentSizeChange={() => chatScrollViewRef.current?.scrollToEnd({ animated: true })}
+                            >
+                                {chatHistory.length === 0 ? (
+                                    <View style={styles.chatScreenEmpty}>
+                                        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(201, 169, 98, 0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+                                            <Ionicons name="chatbubbles-outline" size={36} color="#C9A962" />
+                                        </View>
+                                        <Text style={styles.chatScreenEmptyText}>
+                                            {language === 'ko'
+                                                ? '무엇이든 편하게 털어놔'
+                                                : 'Feel free to share anything'}
+                                        </Text>
+                                        <Text style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.3)', marginTop: 8, textAlign: 'center' }}>
+                                            {language === 'ko'
+                                                ? '네 이야기를 들을 준비가 되어있어'
+                                                : 'Ready to listen to your story'}
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    chatHistory.map((msg, idx) => (
+                                        msg.role === 'user' ? (
+                                            <View
+                                                key={idx}
+                                                style={[
+                                                    styles.chatScreenBubble,
+                                                    styles.chatScreenBubbleUser
+                                                ]}
+                                            >
+                                                <Text style={[
+                                                    styles.chatScreenBubbleText,
+                                                    styles.chatScreenBubbleTextUser
+                                                ]}>
+                                                    {msg.text}
+                                                </Text>
+                                            </View>
+                                        ) : (
+                                            <View
+                                                key={idx}
+                                                style={[
+                                                    styles.chatScreenBubble,
+                                                    styles.chatScreenBubbleAi
+                                                ]}
+                                            >
+                                                <Text style={[
+                                                    styles.chatScreenBubbleText,
+                                                    styles.chatScreenBubbleTextAi
+                                                ]}>
+                                                    {msg.text}
+                                                </Text>
+                                            </View>
+                                        )
+                                    ))
+                                )}
+                            </ScrollView>
+
+                            {/* 하단 입력창 */}
+                            <View style={styles.chatScreenInputContainer}>
+                                <TextInput
+                                    style={styles.chatScreenInput}
+                                    multiline
+                                    placeholder={language === 'ko' ? '메시지를 입력해...' : 'Type a message...'}
+                                    placeholderTextColor="rgba(255, 255, 255, 0.6)"
+                                    value={chatInput}
+                                    onChangeText={setChatInput}
+                                    maxLength={200}
+                                />
+                                <TouchableOpacity
+                                    style={[
+                                        styles.chatScreenSendButton,
+                                        (!chatInput.trim() || isSubmitting) && styles.chatScreenSendButtonDisabled
+                                    ]}
+                                    onPress={sendChatMessage}
+                                    disabled={!chatInput.trim() || isSubmitting}
+                                >
+                                    {isSubmitting ? (
+                                        <ActivityIndicator size="small" color="#0D1117" />
+                                    ) : (
+                                        <Ionicons name="send" size={18} color="#0D1117" />
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* 채팅 기록 모달 */}
+                            <Modal
+                                visible={showChatHistory}
+                                animationType="slide"
+                                transparent={true}
+                                onRequestClose={() => setShowChatHistory(false)}
+                            >
+                                <View style={styles.chatHistoryModalContainer}>
+                                    <View style={styles.chatHistoryModalContent}>
+                                        <View style={styles.chatHistoryBgContainer}>
+                                            <View style={styles.chatHistoryHandle} />
+
+                                            <View style={styles.chatHistoryHeader}>
+                                                <Text style={styles.chatHistoryTitle}>
+                                                    {language === 'ko' ? '채팅 기록' : 'Chat History'}
+                                                </Text>
+                                                <TouchableOpacity
+                                                    onPress={() => setShowChatHistory(false)}
+                                                    style={styles.chatHistoryCloseButton}
+                                                >
+                                                    <Ionicons name="close" size={20} color="rgba(255, 255, 255, 0.6)" />
+                                                </TouchableOpacity>
+                                            </View>
+
+                                            <ScrollView style={styles.chatHistoryList}>
+                                            {savedChatSessions.length === 0 ? (
+                                                <View style={styles.chatHistoryEmpty}>
+                                                    <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(201, 169, 98, 0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                                                        <Ionicons name="chatbubbles-outline" size={32} color="#C9A962" />
+                                                    </View>
+                                                    <Text style={styles.chatHistoryEmptyText}>
+                                                        {language === 'ko' ? '저장된 채팅 기록이 없어' : 'No saved chat history'}
+                                                    </Text>
+                                                </View>
+                                            ) : (
+                                                savedChatSessions.map((session, index) => (
+                                                    <View key={index} style={styles.chatHistoryItemContainer}>
+                                                        <TouchableOpacity
+                                                            style={styles.chatHistoryItem}
+                                                            onPress={() => {
+                                                                setChatHistory(session.messages);
+                                                                setCurrentSessionId(session.id); // 세션 ID 설정
+                                                                setShowChatHistory(false);
+                                                            }}
+                                                        >
+                                                            <View style={{ flex: 1 }}>
+                                                                <Text style={styles.chatHistoryItemTitle} numberOfLines={2}>
+                                                                    {session.title || session.preview || (language === 'ko' ? '대화 기록' : 'Chat history')}
+                                                                </Text>
+                                                                <Text style={styles.chatHistoryItemDate}>
+                                                                    {(() => {
+                                                                        const date = new Date(session.timestamp);
+                                                                        // timestamp 유효성 검증
+                                                                        if (isNaN(date.getTime())) {
+                                                                            return language === 'ko' ? '날짜 오류' : 'Invalid Date';
+                                                                        }
+                                                                        // 한국시간으로 변환
+                                                                        const year = date.getFullYear();
+                                                                        const month = date.getMonth() + 1;
+                                                                        const day = date.getDate();
+                                                                        const hours = date.getHours();
+                                                                        const minutes = date.getMinutes();
+
+                                                                        if (language === 'ko') {
+                                                                            return `${year}년 ${month}월 ${day}일 ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                                                                        } else {
+                                                                            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                                                            return `${monthNames[month-1]} ${day}, ${year} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                                                                        }
+                                                                    })()}
+                                                                </Text>
+                                                            </View>
+                                                            <TouchableOpacity
+                                                                style={styles.chatHistoryDeleteButton}
+                                                                onPress={(e) => {
+                                                                    e.stopPropagation();
+                                                                    Alert.alert(
+                                                                        language === 'ko' ? '채팅 기록 삭제' : 'Delete Chat',
+                                                                        language === 'ko' ? '이 대화를 삭제하시겠습니까?' : 'Delete this conversation?',
+                                                                        [
+                                                                            { text: language === 'ko' ? '취소' : 'Cancel', style: 'cancel' },
+                                                                            {
+                                                                                text: language === 'ko' ? '삭제' : 'Delete',
+                                                                                style: 'destructive',
+                                                                                onPress: () => {
+                                                                                    setSavedChatSessions(prev => prev.filter((_, i) => i !== index));
+                                                                                    hapticSuccess();
+                                                                                }
+                                                                            }
+                                                                        ]
+                                                                    );
+                                                                }}
+                                                            >
+                                                                <Ionicons name="trash-outline" size={20} color="rgba(255, 255, 255, 0.6)" />
+                                                            </TouchableOpacity>
+                                                        </TouchableOpacity>
+                                                    </View>
+                                                ))
+                                            )}
+                                            </ScrollView>
+                                        </View>
+                                    </View>
+                                </View>
+                            </Modal>
+                        </View>
+                    </KeyboardAvoidingView>
+            </SafeAreaView>
+        );
+    }
+
     return (
         <SafeAreaView style={styles.container} edges={[]}>
-                <StatusBar barStyle="light-content" backgroundColor="#667eea" translucent={false} />
-                <ImageBackground
-                    source={require('../assets/night-sky-bg.png')}
+                <StatusBar barStyle="light-content" hidden={true} />
+                <LinearGradient
+                    colors={DESIGN.colors.bgGradient}
                     style={styles.background}
-                    resizeMode="cover"
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
                 >
-                {/* 별빛 효과 (밤에만 표시) */}
-                {stars.length > 0 && (
-                    <View style={styles.starsContainer} pointerEvents="none">
-                        {stars.map((star) => (
-                            <Animated.View
-                                key={star.id}
-                                style={[
-                                    star.isSpecial ? styles.specialStar : styles.star,
-                                    {
-                                        left: `${star.x}%`,
-                                        top: `${star.y}%`,
-                                        width: star.size,
-                                        height: star.size,
-                                        opacity: star.opacity,
-                                    },
-                                ]}
-                            />
-                        ))}
-                    </View>
-                )}
                 <KeyboardAvoidingView
                     style={styles.content}
                     behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -2678,68 +3822,65 @@ export default function App() {
                     </Animated.View>
                 </KeyboardAvoidingView>
 
-                {/* 개선된 탭 바 */}
-                <View style={[styles.tabBar, ]}>
-                    <LinearGradient
-                        colors={['#667eea', '#764ba2']}
-                        style={styles.tabGradient}
-                    >
+                {/* 새로운 미니멀 탭 바 */}
+                <View style={styles.tabBarNew}>
+                    <View style={styles.tabBarInner}>
                         <TouchableOpacity
-                            style={styles.tabItem}
+                            style={styles.tabItemNew}
                             onPress={() => handleTabSwitch('home')}
                         >
                             <Ionicons
                                 name={currentTab === 'home' ? 'home' : 'home-outline'}
-                                size={24}
-                                color={currentTab === 'home' ? '#667eea' : '#ffffff'}
+                                size={22}
+                                color={currentTab === 'home' ? DESIGN.colors.primary : DESIGN.colors.textMuted}
                             />
-                            <Text style={[styles.tabText, currentTab === 'home' && { color: '#667eea' }]}>
+                            <Text style={[styles.tabTextNew, currentTab === 'home' && styles.tabTextActive]}>
                                 {translate('tabHome')}
                             </Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={styles.tabItem}
+                            style={styles.tabItemNew}
                             onPress={() => handleTabSwitch('history')}
                         >
                             <Ionicons
                                 name={currentTab === 'history' ? 'book' : 'book-outline'}
-                                size={24}
-                                color={currentTab === 'history' ? '#667eea' : '#ffffff'}
+                                size={22}
+                                color={currentTab === 'history' ? DESIGN.colors.primary : DESIGN.colors.textMuted}
                             />
-                            <Text style={[styles.tabText, currentTab === 'history' && { color: '#667eea' }]}>
+                            <Text style={[styles.tabTextNew, currentTab === 'history' && styles.tabTextActive]}>
                                 {translate('tabHistory')}
                             </Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={styles.tabItem}
+                            style={styles.tabItemNew}
                             onPress={() => handleTabSwitch('insights')}
                         >
                             <Ionicons
                                 name={currentTab === 'insights' ? 'stats-chart' : 'stats-chart-outline'}
-                                size={24}
-                                color={currentTab === 'insights' ? '#667eea' : '#ffffff'}
+                                size={22}
+                                color={currentTab === 'insights' ? DESIGN.colors.primary : DESIGN.colors.textMuted}
                             />
-                            <Text style={[styles.tabText, currentTab === 'insights' && { color: '#667eea' }]}>
+                            <Text style={[styles.tabTextNew, currentTab === 'insights' && styles.tabTextActive]}>
                                 {translate('tabInsights')}
                             </Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={styles.tabItem}
+                            style={styles.tabItemNew}
                             onPress={() => handleTabSwitch('settings')}
                         >
                             <Ionicons
                                 name={currentTab === 'settings' ? 'settings' : 'settings-outline'}
-                                size={24}
-                                color={currentTab === 'settings' ? '#667eea' : '#ffffff'}
+                                size={22}
+                                color={currentTab === 'settings' ? DESIGN.colors.primary : DESIGN.colors.textMuted}
                             />
-                            <Text style={[styles.tabText, currentTab === 'settings' && { color: '#667eea' }]}>
+                            <Text style={[styles.tabTextNew, currentTab === 'settings' && styles.tabTextActive]}>
                                 {translate('tabSettings')}
                             </Text>
                         </TouchableOpacity>
-                    </LinearGradient>
+                    </View>
                 </View>
 
                 {/* 개선된 결과 시트 */}
@@ -2750,51 +3891,44 @@ export default function App() {
                             styles.resultSheet,
                             { transform: [{ translateY: sheetAnim }] }
                         ]}>
-
-                        <View
-                            style={styles.sheetContainer}
-                        >
-                            <View
-                                style={[styles.sheetHandle, ]}
-                            />
+                        <View style={styles.sheetContainer}>
+                            <View style={styles.sheetHandle} />
                             <View style={styles.sheetContent}>
-                                <LinearGradient
-                                    colors={['#667eea', '#764ba2']}
-                                    style={styles.sheetBadge}
-                                >
+                                <View style={styles.sheetBadge}>
                                     <Text style={styles.sheetBadgeText}>
                                         {language === 'ko' ? (currentResult?.emotion_ko || currentResult?.emotion) : (currentResult?.emotion_en || currentResult?.emotion)}
                                     </Text>
-                                </LinearGradient>
-                                <Text style={[styles.sheetMessage, null]}>
-                                    {language === 'ko' ? (currentResult?.comfort_ko || currentResult?.comfort) : (currentResult?.comfort_en || currentResult?.comfort)}
-                                </Text>
+                                </View>
 
-                                {currentResult?.intensity && (
-                                    <View style={[styles.sheetIntensity, ]}>
-                                        <Text style={styles.sheetIntensityTitle}>{translate('intensity')}</Text>
-                                        <View style={styles.intensityDots}>
-                                            {[1, 2, 3, 4, 5].map(i => (
-                                                <View key={i} style={[
-                                                    styles.intensityDot,
-                                                    i <= currentResult.intensity && styles.intensityDotActive
-                                                ]} />
-                                            ))}
-                                        </View>
-                                    </View>
-                                )}
-
-                                <View style={[styles.sheetAction, ]}>
-                                    <Text style={styles.sheetActionTitle}>💡 {language === 'ko' ? '추천 활동' : 'Recommended Activity'}</Text>
-                                    <Text style={[styles.sheetActionText, null]}>
-                                        {language === 'ko' ? (currentResult?.action_ko || currentResult?.action) : (currentResult?.action_en || currentResult?.action)}
+                                {/* 1. 위로 (상태 분석 포함) */}
+                                <View style={styles.sheetSection}>
+                                    <Text style={styles.sheetSectionTitle}>✨ {language === 'ko' ? '맞춤 분석' : 'Personalized Analysis'}</Text>
+                                    <Text style={styles.sheetSectionText}>
+                                        {language === 'ko' ? (currentResult?.comfort_ko || currentResult?.comfort) : (currentResult?.comfort_en || currentResult?.comfort)}
                                     </Text>
+                                </View>
+
+                                {/* 2. 해결 방안 */}
+                                <View style={styles.sheetSection}>
+                                    <Text style={styles.sheetSectionTitle}>💡 {language === 'ko' ? '해결 방안' : 'Solutions'}</Text>
+                                    {(() => {
+                                        const solutionText = language === 'ko' ? (currentResult?.solution_ko || currentResult?.solution) : (currentResult?.solution_en || currentResult?.solution);
+                                        // \n\n으로 문단 구분
+                                        const paragraphs = solutionText.split('\n\n').filter(p => p.trim());
+                                        return paragraphs.map((paragraph, index) => (
+                                            <Text key={index} style={[styles.sheetSectionText, { marginBottom: index < paragraphs.length - 1 ? 16 : 0 }]}>
+                                                {paragraph.trim()}
+                                            </Text>
+                                        ));
+                                    })()}
                                 </View>
 
                                 <View style={styles.sheetButtons}>
                                     <TouchableOpacity style={styles.sheetButton} onPress={closeResultSheet}>
                                         <LinearGradient
-                                            colors={['#667eea', '#764ba2']}
+                                            colors={['#C9A962', '#B8985A']}
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 1, y: 0 }}
                                             style={styles.sheetButtonGradient}
                                         >
                                             <Text style={styles.sheetButtonText}>{translate('recordDone')}</Text>
@@ -2827,7 +3961,7 @@ export default function App() {
                                         style={styles.crisisButton}
                                         onPress={() => {
                                             const helplines = language === 'en' ? HELPLINES['en-US'] : HELPLINES['ko-KR'];
-                                            openSafeURL(`tel:${helplines.suicide}`, '전화 앱을 열 수 없어요');
+                                            openSafeURL(`tel:${helplines.suicide}`, '전화 앱을 열 수 없어');
                                         }}
                                     >
                                         <LinearGradient
@@ -2845,7 +3979,7 @@ export default function App() {
                                         style={styles.crisisButtonSecondary}
                                         onPress={() => {
                                             const helplines = language === 'en' ? HELPLINES['en-US'] : HELPLINES['ko-KR'];
-                                            openSafeURL(`tel:${helplines.youth}`, '전화 앱을 열 수 없어요');
+                                            openSafeURL(`tel:${helplines.youth}`, '전화 앱을 열 수 없어');
                                         }}
                                     >
                                         <Ionicons name="chatbubble-outline" size={20} color="#EF4444" />
@@ -2863,7 +3997,7 @@ export default function App() {
                                     <Ionicons name="warning" size={16} color="#EF4444" />
                                     <Text style={styles.medicalDisclaimerText}>
                                         {language === 'ko' ? 
-                                            '⚠️ 본 앱은 의료 조언을 제공하지 않습니다. 전문의와 상담하세요.' :
+                                            '⚠️ 본 앱은 의료 조언을 제공하지 않아. 전문의와 상담해!' :
                                             '⚠️ This app does not provide medical advice. Please consult a professional.'
                                         }
                                     </Text>
@@ -2898,10 +4032,10 @@ export default function App() {
                                 
                                 <View style={styles.passwordModalBody}>
                                     <Text style={styles.passwordModalSubtitle}>
-                                        백업 파일을 보호할 비밀번호를 입력하세요
+                                        백업 파일을 보호할 비밀번호를 입력해
                                     </Text>
                                     <Text style={styles.passwordModalWarning}>
-                                        ⚠️ 비밀번호를 분실하면 데이터를 복구할 수 없습니다
+                                        ⚠️ 비밀번호를 분실하면 데이터를 복구할 수 없어
                                     </Text>
                                     
                                     <TextInput
@@ -2960,125 +4094,73 @@ export default function App() {
                     </View>
                 )}
 
-                {/* 개선된 익명 위로 모달 - 커스텀 오버레이 */}
-                {showAnonymousModal && (
-                  <View style={[StyleSheet.absoluteFillObject, { zIndex: 1000 }]}>
-                    <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-                      <View style={styles.modalOverlay}>
-                        <Image
-                          source={require('../assets/moonlight-ocean-bg.png')}
-                          style={StyleSheet.absoluteFillObject}
-                          resizeMode="cover"
-                        />
-                        <View style={styles.modalContent}>
-                      {/* ⬇️ 기존 styles.modalHeader 대신 inline 헤더 사용 */}
-                      <View style={[styles.modalHeaderInline, {marginBottom: 20}]}>
-                        <View style={{ width: 24 }} />{/* 좌측 더미(가운데 정렬 보정) */}
-                        <Text style={[styles.modalTitle, styles.centeredModalTitle]}>
-                          {translate('anonymousComfort')}
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() => {
-                            try {
-                              setShowAnonymousModal(false);
-                              setAnonymousText('');
-                              setAnonymousResult(null);
-                            } catch (error) {
-                              if (__DEV__) console.log('Close modal error:', error);
-                            }
-                          }}
-                        >
-                          <Ionicons name="close" size={24} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-
-                      <TextInput
-                        style={[styles.anonymousInput, null]}
-                        multiline
-                        placeholder={translate('emotionPlaceholder')}
-                        placeholderTextColor="#999"
-                        value={anonymousText}
-                        onChangeText={setAnonymousText}
-                        maxLength={100}
-                      />
-
-                      {/* ⬇️ 글자 수를 '입력창-버튼' 사이 중앙 느낌으로 배치 */}
-                      <View style={styles.charCountContainer}>
-                        <Text style={[styles.charCount, styles.charCountAnonymous]}>
-                          {anonymousText.length}/100
-                        </Text>
-                      </View>
-
-                      {anonymousResult && (
-                        <View style={[styles.anonymousResult, null]}>
-                          <LinearGradient
-                            colors={['#475569', '#3f4f63']}
-                            style={styles.anonymousResultGradient}
-                          >
-                            <CollapsibleText
-                                text={language === 'ko' ? (anonymousResult.comfort_ko || anonymousResult.comfort) : (anonymousResult.comfort_en || anonymousResult.comfort)}
-                                textStyle={styles.anonymousResultText}
-                                language={language}
-                                maxLines={3}
-                            />
-                            <CollapsibleText
-                                text={language === 'ko' ? (anonymousResult.action_ko || anonymousResult.action) : (anonymousResult.action_en || anonymousResult.action)}
-                                textStyle={styles.anonymousResultAction}
-                                language={language}
-                                maxLines={2}
-                            />
-                          </LinearGradient>
-                          
+                {/* 데이터 복원 비밀번호 입력 모달 */}
+                {showImportPasswordModal && (
+                    <View style={[StyleSheet.absoluteFillObject, { zIndex: 1000 }]}>
+                        <View style={styles.modalOverlay}>
+                            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                                <View style={styles.passwordModalContent}>
+                                    <View style={styles.passwordModalHeader}>
+                                        <Ionicons name="key-outline" size={24} color="#7dd3fc" />
+                                        <Text style={styles.passwordModalTitle}>비밀번호 입력</Text>
+                                    </View>
+                                    
+                                    <View style={styles.passwordModalBody}>
+                                        <Text style={styles.passwordModalSubtitle}>
+                                            암호화된 백업 파일을 복원하려면 비밀번호를 입력해줘
+                                        </Text>
+                                        
+                                        <TextInput
+                                            style={styles.passwordModalInput}
+                                            value={importPassword}
+                                            onChangeText={setImportPassword}
+                                            placeholder="백업 시 사용한 비밀번호"
+                                            placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                                            secureTextEntry={true}
+                                            autoCapitalize="none"
+                                            autoCorrect={false}
+                                            returnKeyType="done"
+                                            onSubmitEditing={() => importSecureBackup(importPassword)}
+                                        />
+                                    </View>
+                                    
+                                    <View style={styles.passwordModalButtons}>
+                                        <TouchableOpacity
+                                            style={[styles.passwordModalButton, styles.cancelButton]}
+                                            onPress={() => {
+                                                setShowImportPasswordModal(false);
+                                                setImportPassword('');
+                                                setImportFileContent(null);
+                                            }}
+                                        >
+                                            <Text style={styles.cancelButtonText}>취소</Text>
+                                        </TouchableOpacity>
+                                        
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.passwordModalButton, 
+                                                styles.confirmButton,
+                                                (!importPassword || importPassword.length < 4) && styles.confirmButtonDisabled
+                                            ]}
+                                            onPress={() => importSecureBackup(importPassword)}
+                                            disabled={!importPassword || importPassword.length < 4}
+                                        >
+                                            <LinearGradient
+                                                colors={(!importPassword || importPassword.length < 4)
+                                                    ? ['#818cf8', '#6366f1']
+                                                    : ['#818CF8', '#6366F1']
+                                                }
+                                                style={styles.passwordConfirmGradient}
+                                            >
+                                                <Ionicons name="cloud-download" size={16} color="#fff" />
+                                                <Text style={styles.confirmButtonText}>복원</Text>
+                                            </LinearGradient>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </KeyboardAvoidingView>
                         </View>
-                      )}
-
-                      <Pressable
-                        disabled={(!anonymousText.trim() || isSubmitting) && !anonymousResult}
-                        onPress={async () => {
-                          if (!anonymousResult && (!anonymousText.trim() || isSubmitting)) return;
-                          // 버튼 누르면 즉시 키보드 내리기
-                          Keyboard.dismiss();
-
-                          // 결과가 있으면 초기화, 없으면 분석 진행
-                          if (anonymousResult) {
-                            setAnonymousText('');
-                            setAnonymousResult(null);
-                            return;
-                          }
-
-                          // 입력 길이 체크 (20자 이하면 확인 모달)
-                          if (anonymousText.trim().length > 0 && anonymousText.trim().length <= 20) {
-                            setShowShortInputConfirm(true);
-                            return;
-                          }
-                          
-                          await performAnonymousAnalysis();
-                        }}
-                      >
-                        <LinearGradient
-                          colors={(!anonymousText.trim() || isSubmitting) && !anonymousResult 
-                            ? ['#6B7280', '#9CA3AF'] 
-                            : ['#667eea', '#764ba2']}
-                          style={[
-                            styles.gradientButton,
-                            styles.modalSubmitButton
-                          ]}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 0 }}
-                        >
-                          {isSubmitting ? (
-                            <ActivityIndicator color="#fff" size="small" />
-                          ) : (
-                            <Text style={styles.modalButtonText}>
-                              {anonymousResult ? (language === 'ko' ? '다른 위로받기' : 'Get Another Comfort') : translate('getComfort')}
-                            </Text>
-                          )}
-                        </LinearGradient>
-                      </Pressable>
                     </View>
-                      </View>
-                    </TouchableWithoutFeedback>
-                  </View>
                 )}
 
                 {/* 휴지통 모달 (개선됨) */}
@@ -3094,10 +4176,9 @@ export default function App() {
                     </TouchableOpacity>
                     <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
                       <View style={[styles.modalOverlay, { paddingHorizontal: 20 }]}>
-                        <Image
-                          source={require('../assets/night-forest-bg.png')}
+                        <LinearGradient
+                          colors={['#1a1a1a', '#2d2d2d', '#1a1a1a']}
                           style={StyleSheet.absoluteFillObject}
-                          resizeMode="cover"
                         />
                         <View style={{ flex: 1, justifyContent: 'center' }}>
 
@@ -3129,7 +4210,7 @@ export default function App() {
                                             style={styles.restoreButton}
                                             onPress={() => restoreEntry(item.id)}
                                         >
-                                            <Ionicons name="refresh" size={16} color="#667eea" />
+                                            <Ionicons name="refresh" size={16} color="#C9A962" />
                                             <Text style={styles.restoreText}>{translate('restore')}</Text>
                                         </TouchableOpacity>
                                         <TouchableOpacity
@@ -3168,7 +4249,7 @@ export default function App() {
                                 <Text style={styles.deleteTitle}>기록을 삭제할까요?</Text>
                             </View>
                             
-                            <Text style={styles.deleteDescription}>삭제된 기록은 휴지통에서 복원할 수 있습니다.</Text>
+                            <Text style={styles.deleteDescription}>삭제된 기록은 휴지통에서 복원할 수 있어</Text>
                             
                             <View style={styles.deleteActionRow}>
                                 <TouchableOpacity 
@@ -3192,16 +4273,168 @@ export default function App() {
                     </View>
                 </Modal>
 
+                {/* 이름 입력 모달 */}
+                <Modal visible={showNameInputModal} transparent animationType="fade" statusBarTranslucent={true}>
+                    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                        <View style={styles.deleteOverlay}>
+                            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                                <View style={styles.deleteModal}>
+                                    <View style={styles.deleteHeader}>
+                                        <Text style={styles.nameModalEmoji}>👋</Text>
+                                        <Text style={styles.deleteTitle}>
+                                            {language === 'ko' ? '이름을 알려줘!' : 'What\'s your name?'}
+                                        </Text>
+                                    </View>
+
+                                    <Text style={styles.deleteDescription}>
+                                        {language === 'ko'
+                                            ? '어떻게 불러줄까?'
+                                            : 'How should we address you?'}
+                                    </Text>
+
+                                    <TextInput
+                                        style={styles.nameInput}
+                                        value={tempNameInput}
+                                        onChangeText={setTempNameInput}
+                                        placeholder={language === 'ko' ? '이름 또는 닉네임' : 'Name or nickname'}
+                                        placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                                        autoFocus={true}
+                                        maxLength={20}
+                                        returnKeyType="done"
+                                        onSubmitEditing={async () => {
+                                            if (tempNameInput.trim()) {
+                                                const name = tempNameInput.trim();
+                                                setUserName(name);
+                                                await AsyncStorage.setItem('userName', name);
+                                                setShowNameInputModal(false);
+                                                setTempNameInput('');
+                                                hapticSuccess();
+                                            }
+                                        }}
+                                    />
+
+                                    <TouchableOpacity
+                                        style={styles.nameConfirmButton}
+                                        onPress={async () => {
+                                            if (tempNameInput.trim()) {
+                                                const name = tempNameInput.trim();
+                                                setUserName(name);
+                                                await AsyncStorage.setItem('userName', name);
+                                                setShowNameInputModal(false);
+                                                setTempNameInput('');
+                                                hapticSuccess();
+                                            }
+                                        }}
+                                    >
+                                        <LinearGradient
+                                            colors={['#C9A962', '#B8985A']}
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 1, y: 0 }}
+                                            style={styles.nameConfirmGradient}
+                                        >
+                                            <Text style={styles.nameConfirmButtonText}>
+                                                {language === 'ko' ? '시작하기' : 'Get Started'}
+                                            </Text>
+                                        </LinearGradient>
+                                    </TouchableOpacity>
+                                </View>
+                            </KeyboardAvoidingView>
+                        </View>
+                    </TouchableWithoutFeedback>
+                </Modal>
+
+                {/* 이름 변경 모달 */}
+                <Modal visible={showNameChangeModal} transparent animationType="fade" statusBarTranslucent={true}>
+                    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                        <View style={styles.deleteOverlay}>
+                            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                                <View style={styles.deleteModal}>
+                                    <TouchableOpacity
+                                        style={styles.modalCloseButton}
+                                        onPress={() => {
+                                            setShowNameChangeModal(false);
+                                            setTempNameInput('');
+                                        }}
+                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                    >
+                                        <Ionicons name="close" size={24} color="rgba(255, 255, 255, 0.6)" />
+                                    </TouchableOpacity>
+                                    <View style={styles.deleteHeader}>
+                                        <Text style={styles.nameModalEmoji}>✏️</Text>
+                                        <Text style={styles.deleteTitle}>
+                                            {language === 'ko' ? '이름 변경' : 'Change Name'}
+                                        </Text>
+                                    </View>
+
+                                    <Text style={styles.deleteDescription}>
+                                        {language === 'ko'
+                                            ? '새로운 이름을 입력해줘'
+                                            : 'Enter your new name'}
+                                    </Text>
+
+                                    <TextInput
+                                        style={styles.nameInput}
+                                        value={tempNameInput}
+                                        onChangeText={setTempNameInput}
+                                        placeholder={language === 'ko' ? '이름 또는 닉네임' : 'Name or nickname'}
+                                        placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                                        autoFocus={true}
+                                        maxLength={20}
+                                        returnKeyType="done"
+                                        onSubmitEditing={async () => {
+                                            if (tempNameInput.trim()) {
+                                                const name = tempNameInput.trim();
+                                                setUserName(name);
+                                                await AsyncStorage.setItem('userName', name);
+                                                setShowNameChangeModal(false);
+                                                setTempNameInput('');
+                                                hapticSuccess();
+                                                showToastMessage(language === 'ko' ? '이름이 변경됐어!' : 'Name changed successfully');
+                                            }
+                                        }}
+                                    />
+
+                                    <TouchableOpacity
+                                        style={styles.nameConfirmButton}
+                                        onPress={async () => {
+                                            if (tempNameInput.trim()) {
+                                                const name = tempNameInput.trim();
+                                                setUserName(name);
+                                                await AsyncStorage.setItem('userName', name);
+                                                setShowNameChangeModal(false);
+                                                setTempNameInput('');
+                                                hapticSuccess();
+                                                showToastMessage(language === 'ko' ? '이름이 변경됐어!' : 'Name changed successfully');
+                                            }
+                                        }}
+                                    >
+                                        <LinearGradient
+                                            colors={['#C9A962', '#B8985A']}
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 1, y: 0 }}
+                                            style={styles.nameConfirmGradient}
+                                        >
+                                            <Text style={styles.nameConfirmButtonText}>
+                                                {language === 'ko' ? '변경' : 'Change'}
+                                            </Text>
+                                        </LinearGradient>
+                                    </TouchableOpacity>
+                                </View>
+                            </KeyboardAvoidingView>
+                        </View>
+                    </TouchableWithoutFeedback>
+                </Modal>
+
                 {/* 익명 위로받기 중복 확인 모달 */}
                 <Modal visible={showAnonymousConfirm} transparent animationType="fade" statusBarTranslucent={true}>
                     <View style={styles.deleteOverlay}>
                         <View style={styles.deleteModal}>
                             <View style={styles.deleteHeader}>
-                                <Ionicons name="refresh-outline" size={28} color="#667eea" />
+                                <Ionicons name="refresh-outline" size={28} color="#C9A962" />
                                 <Text style={styles.deleteTitle}>{translate('getComfort')}</Text>
                             </View>
                             
-                            <Text style={styles.deleteDescription}>같은 내용으로 다시 위로를 받으시겠어요? 일일 횟수가 차감됩니다.</Text>
+                            <Text style={styles.deleteDescription}>같은 내용으로 다시 위로를 받을까? 일일 횟수가 차감돼</Text>
                             
                             <View style={styles.deleteActionRow}>
                                 <TouchableOpacity 
@@ -3230,27 +4463,33 @@ export default function App() {
                     <View style={styles.deleteOverlay}>
                         <View style={styles.deleteModal}>
                             <View style={styles.deleteHeader}>
-                                <Ionicons name="create-outline" size={28} color="#667eea" />
+                                <Ionicons name="create-outline" size={28} color="#C9A962" />
                                 <Text style={styles.deleteTitle}>{translate('shortInputTitle')}</Text>
                             </View>
-                            
+
                             <Text style={styles.deleteDescription}>{translate('shortInputMessage')}</Text>
-                            
+
                             <View style={styles.deleteActionRow}>
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={styles.cancelButton}
                                     onPress={() => setShowShortInputConfirm(false)}
                                 >
                                     <Text style={styles.cancelButtonText}>{translate('writeMore')}</Text>
                                 </TouchableOpacity>
-                                
-                                <TouchableOpacity 
+
+                                <TouchableOpacity
                                     style={styles.confirmDeleteButton}
                                     onPress={async () => {
                                         setShowShortInputConfirm(false);
                                         await performAnonymousAnalysis();
                                     }}
                                 >
+                                    <LinearGradient
+                                        colors={['#C9A962', '#B8985A']}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 0 }}
+                                        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                                    />
                                     <Text style={styles.confirmDeleteButtonText}>{translate('getComfortNow')}</Text>
                                 </TouchableOpacity>
                             </View>
@@ -3263,27 +4502,33 @@ export default function App() {
                     <View style={styles.deleteOverlay}>
                         <View style={styles.deleteModal}>
                             <View style={styles.deleteHeader}>
-                                <Ionicons name="create-outline" size={28} color="#667eea" />
+                                <Ionicons name="create-outline" size={28} color="#C9A962" />
                                 <Text style={styles.deleteTitle}>{translate('shortInputTitle')}</Text>
                             </View>
-                            
+
                             <Text style={styles.deleteDescription}>{translate('shortInputMessage')}</Text>
-                            
+
                             <View style={styles.deleteActionRow}>
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={styles.cancelButton}
                                     onPress={() => setShowShortDiaryConfirm(false)}
                                 >
                                     <Text style={styles.cancelButtonText}>{translate('writeMore')}</Text>
                                 </TouchableOpacity>
-                                
-                                <TouchableOpacity 
+
+                                <TouchableOpacity
                                     style={styles.confirmDeleteButton}
                                     onPress={async () => {
                                         setShowShortDiaryConfirm(false);
                                         await performEmotionAnalysis(currentInputText);
                                     }}
                                 >
+                                    <LinearGradient
+                                        colors={['#C9A962', '#B8985A']}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 0 }}
+                                        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                                    />
                                     <Text style={styles.confirmDeleteButtonText}>{translate('getComfortNow')}</Text>
                                 </TouchableOpacity>
                             </View>
@@ -3294,7 +4539,10 @@ export default function App() {
 
                 {/* 토스트 메시지 */}
                 <ToastMessage />
-            </ImageBackground>
+
+                {/* 업데이트 권장 팝업 */}
+                <UpdatePrompt language={language} />
+            </LinearGradient>
 
 
         </SafeAreaView>
@@ -3304,7 +4552,7 @@ export default function App() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#667eea', // 기본 배경색 추가
+        backgroundColor: DESIGN.colors.bgGradient[0],
     },
     starsContainer: {
         position: 'absolute',
@@ -3381,7 +4629,7 @@ const styles = StyleSheet.create({
         marginBottom: 16,
         borderRadius: 20,
         overflow: 'hidden',
-        shadowColor: '#667eea',
+        shadowColor: '#C9A962',
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.3,
         shadowRadius: 12,
@@ -3487,7 +4735,7 @@ const styles = StyleSheet.create({
                 backgroundColor: 'transparent',
             },
             ios: {
-                shadowColor: '#667eea',
+                shadowColor: '#C9A962',
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.1,
                 shadowRadius: 12,
@@ -3689,7 +4937,7 @@ const styles = StyleSheet.create({
         marginHorizontal: 20,
         marginBottom: 20,
         borderRadius: 24,
-        shadowColor: '#667eea',
+        shadowColor: '#C9A962',
         shadowOffset: { width: 0, height: 12 },
         shadowOpacity: 0.15,
         shadowRadius: 24,
@@ -3733,32 +4981,26 @@ const styles = StyleSheet.create({
         width: '100%',
     },
     newHomeHeader: {
-        paddingTop: 64,
-        paddingBottom: 20,
+        paddingTop: DESIGN.spacing.xxl,
+        paddingBottom: DESIGN.spacing.lg,
         alignItems: 'center',
     },
     newHomeGreeting: {
-        fontSize: 44,
-        fontWeight: '900',
-        color: '#ffffff',
+        fontSize: DESIGN.typography.title.size,
+        fontWeight: DESIGN.typography.title.weight,
+        color: DESIGN.colors.textPrimary,
         textAlign: 'center',
-        textShadowColor: 'rgba(0,0,0,0.5)',
-        textShadowOffset: { width: 0, height: 4 },
-        textShadowRadius: 12,
-        marginBottom: 12,
-        letterSpacing: -0.8,
-        lineHeight: 54,
+        marginBottom: DESIGN.spacing.sm,
+        letterSpacing: DESIGN.typography.title.letterSpacing,
+        lineHeight: 42,
     },
     newHomeSubtitle: {
-        fontSize: 18,
-        fontWeight: '400',
-        color: 'rgba(255,255,255,0.8)',  // 투명도 조정
+        fontSize: DESIGN.typography.subtitle.size,
+        fontWeight: DESIGN.typography.subtitle.weight,
+        color: DESIGN.colors.textSecondary,
         textAlign: 'center',
-        lineHeight: 25, // 140% 행간
-        letterSpacing: 0.3,
-        textShadowColor: 'rgba(0,0,0,0.2)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 2,
+        lineHeight: 26,
+        letterSpacing: DESIGN.typography.subtitle.letterSpacing,
     },
     newStreakBanner: {
         marginVertical: 16,
@@ -3797,7 +5039,7 @@ const styles = StyleSheet.create({
         paddingVertical: 30,
     },
     newMainTitle: {
-        fontSize: 32,
+        fontSize: 40,
         fontWeight: '800',
         color: '#ffffff',
         textAlign: 'center',
@@ -3827,30 +5069,24 @@ const styles = StyleSheet.create({
         paddingHorizontal: 10,
         width: '100%',
     },
-    // 점선 말풍선 스타일 - 눈에 띄는 버전
+    // 서브타이틀 말풍선 - Calm 스타일
     dottedBubble: {
-        backgroundColor: 'rgba(236, 72, 153, 0.2)',
-        borderRadius: 999,
-        padding: 10,
-        paddingHorizontal: 24,
-        marginBottom: 28,
-        maxWidth: '70%',
+        backgroundColor: DESIGN.colors.cardBg,
+        borderRadius: DESIGN.radius.full,
+        padding: DESIGN.spacing.md,
+        paddingHorizontal: DESIGN.spacing.lg,
+        marginBottom: DESIGN.spacing.xl,
+        maxWidth: '80%',
         alignSelf: 'center',
-        borderWidth: 1.5,
-        borderColor: 'rgba(255, 255, 255, 0.6)',
-        shadowColor: '#EC4899',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.5,
-        shadowRadius: 15,
-        elevation: 5,
+        ...DESIGN.shadows.soft,
     },
     dottedBubbleText: {
-        color: '#ffffff',
-        fontSize: 14,
-        lineHeight: 20,
+        color: DESIGN.colors.textSecondary,
+        fontSize: DESIGN.typography.body.size,
+        lineHeight: DESIGN.typography.body.lineHeight,
         textAlign: 'center',
-        fontWeight: '700',
-        letterSpacing: 0.5,
+        fontWeight: '400',
+        letterSpacing: 0.1,
     },
     
     // ScrollView의 contentContainerStyle용 중앙 정렬 - 프리미엄 간격
@@ -3880,56 +5116,48 @@ const styles = StyleSheet.create({
         color: 'rgba(255, 255, 255, 0.5)',
         fontSize: 12,
     },
-    // 새로운 레이아웃 스타일들 - 프리미엄 간격
+    // 새로운 레이아웃 스타일들 - Glassmorphism
     newInputSection: {
-        marginVertical: 20,
-        marginBottom: 8,
+        marginVertical: DESIGN.spacing.lg,
+        marginBottom: DESIGN.spacing.sm,
         width: '100%',
     },
     newInputCard: {
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        borderRadius: 24, // Card radius
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.3)',
-        padding: 20,
+        backgroundColor: DESIGN.colors.cardBg,
+        borderRadius: DESIGN.radius.xl,
+        padding: DESIGN.spacing.lg,
         width: '100%',
         alignSelf: 'stretch',
         flexShrink: 0,
-        marginHorizontal: 16, // 좌우 여백으로 크기 조절
+        ...DESIGN.shadows.soft,
     },
-    // 새로운 입력 컨테이너 스타일 - 확 바뀐 디자인
+    // 새로운 입력 컨테이너 스타일 - Glassmorphism
     inputContainer: {
         width: '90%',
         maxWidth: 360,
         alignSelf: 'center',
     },
-    inputBubble: {
-        backgroundColor: 'rgba(167, 139, 250, 0.25)',
-        borderRadius: 28,
-        borderWidth: 2,
-        borderColor: 'rgba(255, 255, 255, 0.5)',
-        padding: 24,
-        paddingHorizontal: 28,
+    // 입력 카드 - Glassmorphism
+    inputBubbleOuter: {
+        borderRadius: DESIGN.radius.xl,
+        backgroundColor: DESIGN.colors.cardBg,
+        padding: DESIGN.spacing.lg,
         width: '100%',
-        minHeight: 160,
-        justifyContent: 'center',
-        shadowColor: '#A78BFA',
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.6,
-        shadowRadius: 24,
-        elevation: 15,
+        minHeight: 140,
+        justifyContent: 'flex-start',
+        ...DESIGN.shadows.medium,
     },
     inputCounterRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginTop: 16, // 여백 증가
-        paddingHorizontal: 8,
+        marginTop: DESIGN.spacing.md,
+        paddingHorizontal: DESIGN.spacing.sm,
     },
     emotionInputSimple: {
-        textAlignVertical: 'center',
-        color: '#ffffff',
-        fontSize: 16,
+        textAlignVertical: 'top',
+        color: DESIGN.colors.textPrimary,
+        fontSize: DESIGN.typography.body.size,
         lineHeight: 26,
         paddingVertical: 4,
         paddingHorizontal: 0,
@@ -3937,48 +5165,44 @@ const styles = StyleSheet.create({
         alignSelf: 'stretch',
         fontWeight: '500',
         letterSpacing: 0.3,
+        includeFontPadding: false,
     },
     mainCTASection: {
-        marginVertical: 36,
+        marginVertical: DESIGN.spacing.xl,
         alignItems: 'center',
-        paddingHorizontal: 20,
+        paddingHorizontal: DESIGN.spacing.lg,
     },
     mainCTAButton: {
-        width: '80%',
+        width: '65%',
+        maxWidth: 240,
+    },
+    mainCTAButtonLoading: {
+        width: '75%',
         maxWidth: 280,
     },
     mainCTAGradient: {
-        borderRadius: 999,
+        borderRadius: DESIGN.radius.full,
         paddingVertical: 18,
-        paddingHorizontal: 36,
+        paddingHorizontal: 48,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 10,
-        shadowColor: '#EC4899',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.7,
-        shadowRadius: 25,
-        elevation: 15,
-        borderWidth: 2,
-        borderColor: 'rgba(255, 255, 255, 0.4)',
+        ...DESIGN.shadows.medium,
     },
     mainCTAText: {
-        color: '#ffffff',
-        fontSize: 17,
-        fontWeight: '800',
-        letterSpacing: 0.8,
-        textShadowColor: 'rgba(0, 0, 0, 0.4)',
-        textShadowOffset: { width: 0, height: 2 },
-        textShadowRadius: 6,
+        color: DESIGN.colors.textOnDark,
+        fontSize: DESIGN.typography.button.size,
+        fontWeight: DESIGN.typography.button.weight,
+        letterSpacing: DESIGN.typography.button.letterSpacing,
     },
     mainCTAHelper: {
-        color: 'rgba(255, 255, 255, 0.75)',
-        fontSize: 13,
-        marginTop: 12,
+        color: DESIGN.colors.textMuted,
+        fontSize: DESIGN.typography.caption.size,
+        marginTop: DESIGN.spacing.md,
         textAlign: 'center',
-        fontWeight: '600',
-        letterSpacing: 0.5,
+        fontWeight: '400',
+        letterSpacing: 0.3,
     },
     emptyStateIcon: {
         position: 'absolute',
@@ -3993,13 +5217,14 @@ const styles = StyleSheet.create({
         width: '100%',
         padding: 24,
         borderRadius: 24,
+        backgroundColor: 'rgba(255, 255, 255, 0.25)',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.2,
-        shadowRadius: 20,
-        elevation: 10,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.3)',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 5,
+        borderWidth: 1.5,
+        borderColor: 'rgba(255, 255, 255, 0.4)',
     },
     newSectionTitle: {
         fontSize: 20,
@@ -4022,13 +5247,13 @@ const styles = StyleSheet.create({
         borderRadius: 24,
         marginHorizontal: 0,
         width: '88%',
-        shadowColor: '#8B5CF6',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.5,
-        shadowRadius: 20,
-        elevation: 10,
-        borderWidth: 2,
-        borderColor: 'rgba(255,255,255,0.35)',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 5,
+        borderWidth: 1.5,
+        borderColor: 'rgba(255,255,255,0.4)',
     },
     newTrendTitle: {
         fontSize: 18,
@@ -4047,13 +5272,14 @@ const styles = StyleSheet.create({
     newTextInputCard: {
         padding: 24,
         borderRadius: 24,
+        backgroundColor: 'rgba(255, 255, 255, 0.25)',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.15,
-        shadowRadius: 16,
-        elevation: 8,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.3)',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 5,
+        borderWidth: 1.5,
+        borderColor: 'rgba(255, 255, 255, 0.4)',
     },
     newTextInputTitle: {
         fontSize: 18,
@@ -4100,7 +5326,7 @@ const styles = StyleSheet.create({
     quickEmotionButtonSelected: {
         backgroundColor: '#3f4f63',
         borderColor: '#7dd3fc',
-        shadowColor: '#667eea',
+        shadowColor: '#C9A962',
         shadowOpacity: 0.2,
         elevation: 6,
     },
@@ -4128,10 +5354,10 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     charCount: {
-        fontSize: 14,
-        color: 'rgba(255, 255, 255, 0.6)',
+        fontSize: 13,
+        color: DESIGN.colors.textMuted,
         textAlign: 'right',
-        fontWeight: '500',
+        fontWeight: '400',
     },
     
     // 제출 버튼 (입력창 아래)
@@ -4143,7 +5369,7 @@ const styles = StyleSheet.create({
         paddingVertical: 18,
         paddingHorizontal: 28,
         borderRadius: 18,
-        shadowColor: '#667eea',
+        shadowColor: '#C9A962',
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: Platform.OS === 'android' ? 0.2 : 0.35,
         shadowRadius: Platform.OS === 'android' ? 6 : 12,
@@ -4171,7 +5397,7 @@ const styles = StyleSheet.create({
                 backgroundColor: 'transparent',
             },
             ios: {
-                shadowColor: '#667eea',
+                shadowColor: '#C9A962',
                 shadowOffset: { width: 0, height: 8 },
                 shadowOpacity: 0.15,
                 shadowRadius: 20,
@@ -4225,7 +5451,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     tabTitle: {
-        fontSize: 32,
+        fontSize: 40,
         fontWeight: '800',
         color: '#ffffff',
         letterSpacing: -1,
@@ -4286,7 +5512,7 @@ const styles = StyleSheet.create({
     filterChipActive: {
         backgroundColor: '#7dd3fc',
         borderColor: '#7dd3fc',
-        shadowColor: '#667eea',
+        shadowColor: '#C9A962',
         shadowOpacity: 0.3,
         elevation: 6,
         height: 44,
@@ -4346,7 +5572,7 @@ const styles = StyleSheet.create({
                 backgroundColor: 'transparent',
             },
             ios: {
-                shadowColor: '#667eea',
+                shadowColor: '#C9A962',
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.3,
                 shadowRadius: 8,
@@ -4638,18 +5864,18 @@ const styles = StyleSheet.create({
     insightSummary: {
         paddingTop: 20,
         borderTopWidth: 1,
-        borderTopColor: 'rgba(0,0,0,0.05)',
+        borderTopColor: 'rgba(255, 255, 255, 0.3)',
         alignItems: 'center',
         gap: 6,
     },
     insightSummaryText: {
-        fontSize: 22,
+        fontSize: 16,
         color: 'rgba(255, 255, 255, 0.95)',
         marginBottom: 8,
-        fontWeight: '800',
+        fontWeight: '700',
         textAlign: 'center',
         letterSpacing: -0.2,
-        lineHeight: 28,
+        lineHeight: 22,
     },
 
     // 나를 살린 문장 (개선됨)
@@ -4786,7 +6012,7 @@ const styles = StyleSheet.create({
     },
     settingDivider: {
         height: 1,
-        backgroundColor: '#2d3748',
+        backgroundColor: 'rgba(255, 255, 255, 0.3)',
         marginVertical: 16,
     },
 
@@ -4834,11 +6060,11 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         gap: 8,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.3)',
+        borderColor: '#fff',
     },
     activeOption: {
         backgroundColor: 'transparent',
-        borderColor: '#7dd3fc',
+        borderColor: '#FFD700',
     },
     darkLanguageOption: {
         backgroundColor: '#3a4556',
@@ -4849,7 +6075,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     activeText: {
-        color: '#7dd3fc',
+        color: '#FFD700',
         fontWeight: '700',
     },
 
@@ -4894,7 +6120,7 @@ const styles = StyleSheet.create({
     },
     deleteAccountText: {
         fontSize: 13,
-        color: '#EF4444',
+        color: '#ffffff',
         fontWeight: '600',
     },
 
@@ -4932,6 +6158,36 @@ const styles = StyleSheet.create({
         textShadowRadius: 2,
     },
 
+    // Premium Minimal 탭 바
+    tabBarNew: {
+        backgroundColor: '#0D1117',
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255, 255, 255, 0.04)',
+    },
+    tabBarInner: {
+        flexDirection: 'row',
+        paddingBottom: Platform.OS === 'ios' ? 32 : 16,
+        paddingTop: 12,
+    },
+    tabItemNew: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 44,
+        paddingVertical: 4,
+    },
+    tabTextNew: {
+        fontSize: 10,
+        color: 'rgba(255, 255, 255, 0.3)',
+        marginTop: 6,
+        fontWeight: '400',
+        letterSpacing: 0.5,
+    },
+    tabTextActive: {
+        color: DESIGN.colors.primary,
+        fontWeight: '500',
+    },
+
     // 결과 시트 (대폭 개선)
     resultSheet: {
         position: 'absolute',
@@ -4940,14 +6196,16 @@ const styles = StyleSheet.create({
         right: 0,
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,
-        paddingBottom: Platform.OS === 'ios' ? 40 : 28,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: -8 },
-        shadowOpacity: 0.25,
+        shadowOpacity: 0.5,
         shadowRadius: 24,
         elevation: 30,
         overflow: 'hidden',
-        backgroundColor: '#1F2937',
+        backgroundColor: '#161B22',
+        borderWidth: 1,
+        borderBottomWidth: 0,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
     },
     darkSheet: {
         shadowColor: '#fff',
@@ -4955,12 +6213,13 @@ const styles = StyleSheet.create({
     },
     sheetContainer: {
         flex: 1,
-        backgroundColor: 'transparent',
+        paddingBottom: Platform.OS === 'ios' ? 40 : 28,
+        backgroundColor: '#161B22',
     },
     sheetHandle: {
         width: 48,
         height: 4,
-        backgroundColor: '#ddd',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
         borderRadius: 2,
         alignSelf: 'center',
         marginTop: 16,
@@ -4973,22 +6232,20 @@ const styles = StyleSheet.create({
         paddingHorizontal: 28,
     },
     sheetBadge: {
+        backgroundColor: 'rgba(201, 169, 98, 0.15)',
         borderRadius: 24,
         alignSelf: 'flex-start',
         marginBottom: 24,
-        shadowColor: '#667eea',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
-        elevation: 6,
+        borderWidth: 1,
+        borderColor: 'rgba(201, 169, 98, 0.3)',
     },
     sheetBadgeText: {
-        color: '#fff',
+        color: '#C9A962',
         fontSize: 16,
-        fontWeight: '700',
+        fontWeight: '600',
         paddingHorizontal: 24,
         paddingVertical: 12,
-        letterSpacing: -0.2,
+        letterSpacing: 0.5,
     },
     sheetMessage: {
         fontSize: 20,
@@ -5001,7 +6258,7 @@ const styles = StyleSheet.create({
 
     // 시트 내 강도 표시
     sheetIntensity: {
-        backgroundColor: '#363d5a',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
         borderRadius: 16,
         padding: 16,
         marginBottom: 20,
@@ -5012,22 +6269,43 @@ const styles = StyleSheet.create({
     sheetIntensityTitle: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#7dd3fc',
+        color: '#fff',
     },
 
+    sheetSection: {
+        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.06)',
+    },
+    sheetSectionTitle: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: 'rgba(255, 255, 255, 0.9)',
+        marginBottom: 12,
+        letterSpacing: 0.3,
+    },
+    sheetSectionText: {
+        fontSize: 15,
+        color: 'rgba(255, 255, 255, 0.7)',
+        lineHeight: 26,
+        fontWeight: '400',
+    },
     sheetAction: {
-        backgroundColor: '#363d5a',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
         borderRadius: 16,
         padding: 20,
         marginBottom: 24,
     },
     darkSheetAction: {
-        backgroundColor: '#3f4666',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
     },
     sheetActionTitle: {
         fontSize: 15,
         fontWeight: '700',
-        color: '#7dd3fc',
+        color: '#fff',
         marginBottom: 8,
         letterSpacing: -0.2,
     },
@@ -5047,9 +6325,9 @@ const styles = StyleSheet.create({
         flex: 2,
         borderRadius: 16,
         overflow: 'hidden',
-        shadowColor: '#667eea',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
+        shadowOpacity: 0.2,
         shadowRadius: 8,
         elevation: 8,
     },
@@ -5069,12 +6347,13 @@ const styles = StyleSheet.create({
     sheetButtonGradient: {
         padding: 18,
         alignItems: 'center',
+        borderRadius: 16,
     },
     sheetButtonText: {
-        color: '#fff',
+        color: '#0D1117',
         fontSize: 16,
-        fontWeight: '700',
-        letterSpacing: -0.2,
+        fontWeight: '600',
+        letterSpacing: 0.5,
     },
 
     // 위기 지원 모달 (대폭 개선)
@@ -5167,40 +6446,91 @@ const styles = StyleSheet.create({
 
     deleteOverlay: {
         flex: 1,
-        backgroundColor: 'transparent',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,
     },
     deleteModal: {
-        backgroundColor: '#ffffff',
-        borderRadius: 20,
-        padding: 24,
+        backgroundColor: '#161B22',
+        borderRadius: 16,
+        padding: 28,
         width: '90%',
         maxWidth: 400,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.3,
+        shadowOpacity: 0.5,
         shadowRadius: 20,
         elevation: 0,
     },
     deleteHeader: {
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 20,
     },
     deleteTitle: {
-        color: '#000000',
-        fontSize: 20,
-        fontWeight: '700',
+        color: '#FFFFFF',
+        fontSize: 18,
+        fontWeight: '600',
         textAlign: 'center',
-        marginTop: 8,
+        marginTop: 12,
     },
     deleteDescription: {
-        color: 'rgba(0, 0, 0, 0.7)',
-        fontSize: 16,
+        color: 'rgba(255, 255, 255, 0.5)',
+        fontSize: 14,
         textAlign: 'center',
-        lineHeight: 24,
-        marginBottom: 20,
+        lineHeight: 22,
+        marginBottom: 24,
+    },
+    nameInput: {
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        borderRadius: 12,
+        paddingVertical: 16,
+        paddingHorizontal: 20,
+        fontSize: 17,
+        color: '#FFFFFF',
+        marginBottom: 24,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        textAlign: 'center',
+        fontWeight: '500',
+    },
+    nameModalEmoji: {
+        fontSize: 48,
+        marginBottom: 8,
+    },
+    modalCloseButton: {
+        position: 'absolute',
+        top: 16,
+        right: 16,
+        zIndex: 10,
+        padding: 4,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    nameConfirmButton: {
+        borderRadius: 12,
+        overflow: 'hidden',
+        alignItems: 'center',
+        shadowColor: '#C9A962',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.35,
+        shadowRadius: 12,
+        elevation: 10,
+    },
+    nameConfirmGradient: {
+        paddingVertical: 16,
+        paddingHorizontal: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+    },
+    nameConfirmButtonText: {
+        fontSize: 17,
+        fontWeight: '600',
+        color: '#0D1117',
+        letterSpacing: 0.5,
     },
     deleteActionRow: {
         flexDirection: 'row',
@@ -5210,27 +6540,27 @@ const styles = StyleSheet.create({
     cancelButton: {
         flex: 1,
         marginRight: 8,
-        backgroundColor: '#f1f5f9',
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
         borderRadius: 12,
         paddingVertical: 14,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
         alignItems: 'center',
-        borderWidth: 2,
-        borderColor: '#e2e8f0',
     },
     cancelButtonText: {
-        color: '#000000',
+        color: 'rgba(255, 255, 255, 0.8)',
         fontSize: 16,
         fontWeight: '600',
     },
     confirmDeleteButton: {
         flex: 1,
         marginLeft: 8,
-        backgroundColor: '#667eea',
+        backgroundColor: 'transparent',
         borderRadius: 12,
         paddingVertical: 14,
         alignItems: 'center',
-        borderWidth: 2,
-        borderColor: '#8b9cf0',
+        borderWidth: 0,
+        overflow: 'hidden',
     },
     confirmDeleteButtonText: {
         color: '#ffffff',
@@ -5265,13 +6595,13 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     modalContent: {
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        backgroundColor: 'transparent',
         borderRadius: 24,
         padding: 24,
         width: '90%',
         maxHeight: '80%',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.25)',
+        borderColor: 'rgba(255, 255, 255, 0.85)',
         backdropFilter: 'blur(20px)',
         shadowColor: 'rgba(255, 255, 255, 0.3)',
         shadowOffset: { width: 0, height: 8 },
@@ -5297,7 +6627,7 @@ const styles = StyleSheet.create({
         letterSpacing: -0.3,
     },
     anonymousInput: {
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        backgroundColor: 'transparent',
         borderRadius: 16,
         padding: 20,
         minHeight: 120,
@@ -5305,7 +6635,7 @@ const styles = StyleSheet.create({
         textAlignVertical: 'top',
         marginBottom: 20,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.25)',
+        borderColor: 'rgba(255, 255, 255, 0.85)',
         backdropFilter: 'blur(20px)',
         color: '#fff', // 입력 텍스트 흰색
     },
@@ -5313,7 +6643,7 @@ const styles = StyleSheet.create({
         marginBottom: 20,
         borderRadius: 16,
         overflow: 'hidden',
-        shadowColor: '#667eea',
+        shadowColor: '#C9A962',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
@@ -5470,36 +6800,55 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         padding: 20,
+        backgroundColor: '#0D1117',
+    },
+    lockIconContainer: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: 'rgba(201, 169, 98, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(201, 169, 98, 0.25)',
+        marginBottom: 24,
     },
     lockTitle: {
-        fontSize: 24,
-        fontWeight: '700',
+        fontSize: 22,
+        fontWeight: '300',
         color: '#fff',
-        marginTop: 20,
         marginBottom: 8,
+        letterSpacing: 0.5,
     },
     lockDescription: {
-        fontSize: 16,
-        color: 'rgba(255, 255, 255, 0.7)',
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.5)',
         marginBottom: 40,
+        fontWeight: '400',
     },
     unlockButton: {
         marginTop: 20,
-        borderRadius: 25,
+        borderRadius: 12,
         overflow: 'hidden',
-        shadowColor: '#667eea',
+        shadowColor: '#C9A962',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
         elevation: 8,
     },
+    lockGradientButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 16,
+        paddingHorizontal: 32,
+        gap: 10,
+    },
     unlockButtonText: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#fff',
-        marginLeft: 10,
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#0D1117',
         textAlign: 'center',
-        letterSpacing: -0.3,
     },
 
     // === 새로 추가 ===
@@ -5571,9 +6920,9 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
     dailyUsage: {
-        color: 'rgba(255, 255, 255, 0.7)',
-        fontSize: 14,
-        fontWeight: '500',
+        color: DESIGN.colors.textMuted,
+        fontSize: 13,
+        fontWeight: '400',
     },
     anonymousTitleRow: {
         flexDirection: 'row',
@@ -5694,5 +7043,567 @@ const styles = StyleSheet.create({
         elevation: 2,
         // 대각선 패턴 효과
         transform: [{ skewX: '0.5deg' }, { skewY: '0.2deg' }],
+    },
+
+    // 주간 감정 카드 스타일
+    weeklyEmotionCard: {
+        width: '100%',
+        marginVertical: 20,
+        marginBottom: 24,
+    },
+    weeklyEmotionGradient: {
+        borderRadius: 24,
+        padding: 20,
+        paddingTop: 16,
+        paddingBottom: 16,
+        borderWidth: 1.5,
+        borderColor: 'rgba(255, 255, 255, 0.4)',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 12,
+        elevation: 6,
+    },
+    weeklyEmotionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 12,
+    },
+    weeklyEmotionTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#ffffff',
+        letterSpacing: 0.3,
+    },
+    // 지난 5일 섹션 - Glassmorphism
+    recentDaysSection: {
+        marginVertical: DESIGN.spacing.lg,
+        width: '100%',
+        paddingHorizontal: DESIGN.spacing.lg,
+    },
+    recentDaysCard: {
+        borderRadius: DESIGN.radius.xl,
+        backgroundColor: DESIGN.colors.cardBg,
+        paddingVertical: DESIGN.spacing.lg,
+        paddingHorizontal: DESIGN.spacing.xl,
+        width: '100%',
+        ...DESIGN.shadows.soft,
+    },
+    recentDaysTitle: {
+        fontSize: 18,
+        fontWeight: '500',
+        color: DESIGN.colors.textPrimary,
+        textAlign: 'center',
+        marginBottom: DESIGN.spacing.md,
+        letterSpacing: 0.2,
+    },
+    recentDaysList: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        flex: 1,
+        gap: DESIGN.spacing.md,
+    },
+    recentDayItem: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: DESIGN.spacing.xs,
+        minWidth: 56,
+    },
+    recentDayEmoji: {
+        fontSize: 24,
+    },
+    recentDayDate: {
+        fontSize: 11,
+        color: DESIGN.colors.textMuted,
+        fontWeight: '500',
+        textAlign: 'center',
+    },
+    // AI 채팅 스타일
+    turnCounter: {
+        fontSize: 12,
+        color: 'rgba(255, 255, 255, 0.7)',
+        marginTop: 4,
+    },
+    chatHistory: {
+        flex: 1,
+        marginBottom: 12,
+    },
+    chatHistoryContent: {
+        paddingVertical: 12,
+        flexGrow: 1,
+    },
+    emptyChatContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 60,
+    },
+    emptyChatText: {
+        fontSize: 16,
+        color: 'rgba(255, 255, 255, 0.7)',
+        textAlign: 'center',
+    },
+    chatBubble: {
+        maxWidth: '75%',
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 18,
+        marginVertical: 4,
+    },
+    chatBubbleUser: {
+        alignSelf: 'flex-end',
+        backgroundColor: '#06b6d4',
+        marginLeft: 60,
+    },
+    chatBubbleAi: {
+        alignSelf: 'flex-start',
+        backgroundColor: 'rgba(71, 85, 105, 0.9)',
+        marginRight: 60,
+    },
+    chatBubbleText: {
+        fontSize: 15,
+        lineHeight: 20,
+    },
+    chatBubbleTextUser: {
+        color: '#ffffff',
+    },
+    chatBubbleTextAi: {
+        color: '#ffffff',
+    },
+    chatInputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    chatInput: {
+        flex: 1,
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        borderRadius: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        color: '#ffffff',
+        fontSize: 15,
+        maxHeight: 100,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.3)',
+    },
+    chatSendButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#06b6d4',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    chatSendButtonDisabled: {
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    },
+    // AI 채팅 전체 화면 스타일
+    chatScreenContainer: {
+        flex: 1,
+        padding: 20,
+    },
+    chatScreenHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingTop: 24,
+        paddingBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+        marginBottom: 0,
+    },
+    chatBackButton: {
+        padding: 4,
+    },
+    chatScreenTitle: {
+        fontSize: 20,
+        fontWeight: '300',
+        color: '#ffffff',
+        letterSpacing: 0.5,
+    },
+    chatScreenSubtitle: {
+        fontSize: 13,
+        color: 'rgba(255, 255, 255, 0.5)',
+        marginTop: 12,
+        marginBottom: 8,
+        textAlign: 'center',
+        fontWeight: '400',
+    },
+    noTurnsContainer: {
+        marginTop: 12,
+        marginBottom: 8,
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        borderRadius: 12,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.2)',
+    },
+    noTurnsText: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#EF4444',
+        textAlign: 'center',
+        marginBottom: 4,
+    },
+    comeBackText: {
+        fontSize: 12,
+        color: 'rgba(255, 255, 255, 0.5)',
+        textAlign: 'center',
+    },
+    chatScreenHistory: {
+        flex: 1,
+    },
+    chatScreenHistoryContent: {
+        paddingVertical: 16,
+        flexGrow: 1,
+    },
+    chatScreenEmpty: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 80,
+    },
+    chatScreenEmptyText: {
+        fontSize: 16,
+        color: 'rgba(255, 255, 255, 0.4)',
+        textAlign: 'center',
+        fontWeight: '400',
+    },
+    chatScreenBubble: {
+        maxWidth: '80%',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 18,
+        marginVertical: 6,
+    },
+    chatScreenBubbleUser: {
+        alignSelf: 'flex-end',
+        backgroundColor: 'rgba(201, 169, 98, 0.2)',
+        borderWidth: 1,
+        borderColor: 'rgba(201, 169, 98, 0.3)',
+    },
+    chatScreenBubbleAi: {
+        alignSelf: 'flex-start',
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    chatScreenBubbleText: {
+        fontSize: 15,
+        lineHeight: 22,
+        fontWeight: '400',
+    },
+    chatScreenBubbleTextUser: {
+        color: '#C9A962',
+    },
+    chatScreenBubbleTextAi: {
+        color: 'rgba(255, 255, 255, 0.9)',
+    },
+    chatScreenInputContainer: {
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        gap: 12,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    chatScreenInput: {
+        flex: 1,
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        borderRadius: 20,
+        paddingHorizontal: 18,
+        paddingVertical: 12,
+        color: '#ffffff',
+        fontSize: 15,
+        maxHeight: 120,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    chatScreenSendButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#C9A962',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#C9A962',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    chatScreenSendButtonDisabled: {
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        shadowOpacity: 0,
+        elevation: 0,
+    },
+    // 채팅 기록 모달 스타일 (결과 시트와 동일)
+    chatHistoryModalContainer: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'flex-end',
+    },
+    chatHistoryModalContent: {
+        backgroundColor: '#161B22',
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        height: '80%',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -8 },
+        shadowOpacity: 0.5,
+        shadowRadius: 24,
+        elevation: 30,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderBottomWidth: 0,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    chatHistoryBgContainer: {
+        flex: 1,
+        width: '100%',
+        backgroundColor: '#161B22',
+        paddingBottom: Platform.OS === 'ios' ? 40 : 28,
+    },
+    chatHistoryHandle: {
+        width: 48,
+        height: 4,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        borderRadius: 2,
+        alignSelf: 'center',
+        marginTop: 16,
+        marginBottom: 20,
+    },
+    chatHistoryHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 28,
+        paddingBottom: 20,
+        borderBottomWidth: 0,
+    },
+    chatHistoryTitle: {
+        fontSize: 20,
+        fontWeight: '300',
+        color: '#ffffff',
+        letterSpacing: 0.5,
+    },
+    chatHistoryCloseButton: {
+        padding: 4,
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        borderRadius: 18,
+        width: 36,
+        height: 36,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    chatHistoryList: {
+        paddingHorizontal: 28,
+        paddingVertical: 16,
+    },
+    chatHistoryEmpty: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 60,
+    },
+    chatHistoryEmptyText: {
+        marginTop: 16,
+        fontSize: 16,
+        color: 'rgba(255, 255, 255, 0.6)',
+    },
+    chatHistoryItemContainer: {
+        marginBottom: 16,
+    },
+    chatHistoryItem: {
+        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        borderRadius: 16,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.06)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    chatHistoryDeleteButton: {
+        padding: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    chatHistoryItemTitle: {
+        fontSize: 17,
+        fontWeight: '700',
+        color: '#ffffff',
+        lineHeight: 24,
+        marginBottom: 8,
+        letterSpacing: -0.2,
+    },
+    chatHistoryItemDate: {
+        fontSize: 13,
+        color: 'rgba(255, 255, 255, 0.6)',
+        fontWeight: '500',
+    },
+    chatHistoryItemHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    chatHistoryItemCount: {
+        fontSize: 12,
+        color: 'rgba(255, 255, 255, 0.5)',
+    },
+    chatHistoryItemPreview: {
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.7)',
+        lineHeight: 20,
+    },
+
+    // ============================================
+    // DeepLog 홈 화면 스타일
+    // ============================================
+    deeplogBgLight1: {
+        position: 'absolute',
+        top: -100,
+        right: -50,
+        width: 300,
+        height: 300,
+        borderRadius: 150,
+        backgroundColor: 'rgba(100, 150, 180, 0.12)',
+    },
+    deeplogBgLight2: {
+        position: 'absolute',
+        bottom: 200,
+        left: -100,
+        width: 250,
+        height: 250,
+        borderRadius: 125,
+        backgroundColor: 'rgba(100, 150, 180, 0.08)',
+    },
+    deeplogTitle: {
+        fontSize: 28,
+        fontWeight: '300',
+        color: '#FFFFFF',
+        marginTop: 32,
+        marginBottom: 32,
+        lineHeight: 42,
+        textAlign: 'center',
+        letterSpacing: 0.3,
+    },
+    deeplogInputCard: {
+        backgroundColor: 'rgba(255, 255, 255, 0.07)',
+        borderRadius: 20,
+        padding: 24,
+        marginBottom: 20,
+        minHeight: 140,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    deeplogTextInput: {
+        fontSize: 17,
+        color: '#FFFFFF',
+        lineHeight: 26,
+        minHeight: 100,
+        textAlignVertical: 'top',
+    },
+    deeplogCTAButton: {
+        width: '100%',
+        borderRadius: 16,
+        overflow: 'hidden',
+        marginBottom: 20,
+    },
+    deeplogCTAButtonActive: {
+        shadowColor: '#6B9DAD',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.35,
+        shadowRadius: 24,
+        elevation: 8,
+    },
+    deeplogCTAGradient: {
+        paddingVertical: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    deeplogCTAInactive: {
+        backgroundColor: 'rgba(255, 255, 255, 0.12)',
+        paddingVertical: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    deeplogCTAText: {
+        fontSize: 17,
+        fontWeight: '600',
+        color: '#FFFFFF',
+    },
+    deeplogPrivacyBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginBottom: 28,
+    },
+    deeplogPrivacyText: {
+        fontSize: 13,
+        color: 'rgba(255, 255, 255, 0.4)',
+        fontWeight: '400',
+    },
+    deeplogStreakCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        paddingHorizontal: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        borderRadius: 14,
+        marginBottom: 24,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    deeplogStreakText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#FFFFFF',
+    },
+    deeplogStreakSubtext: {
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.5)',
+        fontWeight: '400',
+    },
+    deeplogRecentSection: {
+        marginTop: 0,
+    },
+    deeplogRecentLabel: {
+        fontSize: 12,
+        fontWeight: '500',
+        color: 'rgba(255, 255, 255, 0.4)',
+        marginBottom: 14,
+        marginLeft: 4,
+        letterSpacing: 0.5,
+    },
+    deeplogRecentList: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    deeplogRecentItem: {
+        flex: 1,
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        borderRadius: 14,
+        paddingVertical: 16,
+        paddingHorizontal: 8,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    deeplogRecentEmoji: {
+        fontSize: 30,
+        marginBottom: 8,
+    },
+    deeplogRecentDay: {
+        fontSize: 11,
+        color: 'rgba(255, 255, 255, 0.5)',
+        fontWeight: '500',
     },
 });

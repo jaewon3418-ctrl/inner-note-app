@@ -243,7 +243,7 @@ export async function exportUserData() {
     try {
         const consent = await checkUserConsent();
         if (!consent) {
-            throw new Error('사용자 동의가 필요합니다.');
+            throw new Error('사용자 동의가 필요해');
         }
 
         // 모든 사용자 데이터 수집

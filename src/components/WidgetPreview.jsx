@@ -17,12 +17,12 @@ const WidgetPreview = ({ visible, onClose }) => {
     
     // 위젯 메시지들 (실제 위젯과 동일)
     const messages = [
-        "오늘 한 줄을 기록해보세요 ✨",
-        "마음을 정리할 시간이에요",
-        "감정을 기록하고 위로받아요 🤗",
-        "오늘 하루는 어땠나요? 📝",
-        "잠깐의 기록이 큰 변화를 만들어요 🌟",
-        "지금 이 순간의 마음을 남겨보세요 💭"
+        "오늘 한 줄을 기록해봐 ✨",
+        "마음을 정리할 시간이야",
+        "감정을 기록하고 위로받아 🤗",
+        "오늘 하루는 어땠어? 📝",
+        "잠깐의 기록이 큰 변화를 만들어 🌟",
+        "지금 이 순간의 마음을 남겨봐 💭"
     ];
 
     // 4초마다 메시지 변경 (데모용으로 빠르게)
@@ -45,9 +45,9 @@ const WidgetPreview = ({ visible, onClose }) => {
             <View style={styles.widgetOverlay}>
                 <View style={styles.widgetHeader}>
                     <View style={styles.appIcon}>
-                        <Ionicons name="book-outline" size={16} color="#667eea" />
+                        <Ionicons name="book-outline" size={16} color="#C9A962" />
                     </View>
-                    <Text style={styles.appName}>INNER NOTE</Text>
+                    <Text style={styles.appName}>DeepLog</Text>
                 </View>
                 <Text style={styles.widgetMessage} numberOfLines={2}>
                     {messages[currentMessageIndex]}
@@ -68,9 +68,9 @@ const WidgetPreview = ({ visible, onClose }) => {
             <View style={[styles.widgetOverlay, { padding: 16 }]}>
                 <View style={styles.widgetHeader}>
                     <View style={styles.appIcon}>
-                        <Ionicons name="book-outline" size={20} color="#667eea" />
+                        <Ionicons name="book-outline" size={20} color="#C9A962" />
                     </View>
-                    <Text style={styles.appName}>INNER NOTE</Text>
+                    <Text style={styles.appName}>DeepLog</Text>
                 </View>
                 <Text style={styles.widgetTitle}>오늘 한 줄</Text>
                 <Text style={styles.widgetMessageLarge}>
@@ -112,10 +112,10 @@ const WidgetPreview = ({ visible, onClose }) => {
 
                     <View style={styles.infoContainer}>
                         <Text style={styles.infoText}>
-                            💡 실제 위젯은 4시간마다 메시지가 변경됩니다
+                            💡 실제 위젯은 4시간마다 메시지가 바뀌어
                         </Text>
                         <Text style={styles.infoText}>
-                            📱 홈 화면에서 위젯을 길게 눌러 추가할 수 있습니다
+                            📱 홈 화면에서 위젯을 길게 눌러서 추가할 수 있어
                         </Text>
                     </View>
 

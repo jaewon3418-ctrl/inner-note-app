@@ -10,7 +10,7 @@ const FloatingActions = ({ onComfortPress, onHistoryPress, language = 'ko' }) =>
     {
       key: 'comfort',
       icon: 'chatbubble-outline',
-      label: language === 'ko' ? '위로받기' : 'Get Comfort',
+      label: language === 'ko' ? '고민 상담소' : 'Worry Counseling',
       colors: ['#FF8A80', '#FFAB40'],
       onPress: onComfortPress,
     },

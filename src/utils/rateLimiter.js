@@ -25,7 +25,7 @@ export class RateLimiter {
             if (hourlyCount >= this.HOURLY_LIMIT) {
                 return { 
                     allowed: false, 
-                    message: `시간당 ${this.HOURLY_LIMIT}회 제한. 잠시 후 다시 시도하세요.`,
+                    message: `시간당 ${this.HOURLY_LIMIT}회 제한이야. 잠시 후 다시 해봐!`,
                     resetIn: 60 - Math.floor((now - validRecords[validRecords.length - 1]) / 60000)
                 };
             }
@@ -36,7 +36,7 @@ export class RateLimiter {
             if (dailyCount >= this.DAILY_LIMIT) {
                 return { 
                     allowed: false, 
-                    message: `일일 ${this.DAILY_LIMIT}회 제한을 초과했습니다.`,
+                    message: `일일 ${this.DAILY_LIMIT}회 제한을 초과했어`,
                     resetIn: Math.floor((validRecords[0] + 24 * 60 * 60 * 1000 - now) / 60000)
                 };
             }
@@ -47,7 +47,7 @@ export class RateLimiter {
             if (weeklyCount >= this.WEEKLY_LIMIT) {
                 return { 
                     allowed: false, 
-                    message: `주간 ${this.WEEKLY_LIMIT}회 제한을 초과했습니다.`,
+                    message: `주간 ${this.WEEKLY_LIMIT}회 제한을 초과했어`,
                     resetIn: Math.floor((validRecords[0] + 7 * 24 * 60 * 60 * 1000 - now) / 60000)
                 };
             }
@@ -59,7 +59,7 @@ export class RateLimiter {
                 if (timeSinceLast < 30) {
                     return {
                         allowed: false,
-                        message: '너무 빠른 요청입니다. 30초 후 다시 시도하세요.',
+                        message: '너무 빠른 요청이야. 30초 후 다시 해봐!',
                         resetIn: Math.ceil(30 - timeSinceLast)
                     };
                 }
@@ -71,7 +71,7 @@ export class RateLimiter {
             // 에러 시 보수적으로 차단
             return { 
                 allowed: false, 
-                message: '일시적 오류가 발생했습니다.' 
+                message: '일시적 오류가 났어' 
             };
         }
     }

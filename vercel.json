@@ -10,10 +10,5 @@
       "src": "api/analyze.js",
       "use": "@vercel/node"
     }
-  ],
-  "functions": {
-    "api/analyze.js": {
-      "runtime": "@vercel/node@2.x"
-    }
-  }
+  ]
 }

@@ -4,5 +4,16 @@
       "source": "/api/:path*",
       "destination": "/api/:path*"
     }
-  ]
+  ],
+  "builds": [
+    {
+      "src": "api/analyze.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "functions": {
+    "api/analyze.js": {
+      "runtime": "@vercel/node@2.x"
+    }
+  }
 }

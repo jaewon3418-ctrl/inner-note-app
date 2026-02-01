@@ -1,0 +1,15 @@
+src/
+android/
+ios/
+.expo/
+node_modules/
+*.md
+.git/
+.gitignore
+app.json
+babel.config.js
+metro.config.js
+tsconfig.json
+tailwind.config.js
+postcss.config.js
+granite.config.ts

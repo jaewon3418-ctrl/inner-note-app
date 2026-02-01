@@ -36,6 +36,12 @@ yarn-error.*
 
 # API Keys - NEVER commit these!
 src/config/apiKeys.js
+secrets.txt
+
+# Screenshots and images
+KakaoTalk_*.png
+*.jpg
+*.jpeg
 
 # typescript
 *.tsbuildinfo

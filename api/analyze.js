@@ -1,11 +1,5 @@
 // api/analyze.js
-const express = require('express');
 const OpenAI = require('openai');
-const cors = require('cors');
-
-const app = express();
-app.use(cors());
-app.use(express.json());
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MODEL = "gpt-4o-mini";
@@ -16,15 +10,15 @@ const openai = new OpenAI({
 
 // --- Helper functions ---
 const getCallName = (userName) => {
-    if (!userName) return null;
-    const name = userName.length >= 3 ? userName.slice(1) : userName;
-    const lastChar = name[name.length - 1];
-    const code = lastChar.charCodeAt(0);
-    if (code >= 0xAC00 && code <= 0xD7A3) {
-        const jongseong = (code - 0xAC00) % 28;
-        return jongseong === 0 ? `${name}야` : `${name}아`;
-    }
-    return name;
+  if (!userName) return null;
+  const name = userName.length >= 3 ? userName.slice(1) : userName;
+  const lastChar = name[name.length - 1];
+  const code = lastChar.charCodeAt(0);
+  if (code >= 0xAC00 && code <= 0xD7A3) {
+    const jongseong = (code - 0xAC00) % 28;
+    return jongseong === 0 ? `${name}야` : `${name}아`;
+  }
+  return name;
 };
 
 function buildAnalysisMessages(userText, userName = null) {
@@ -90,10 +84,23 @@ ${userText}
   ];
 }
 
-// --- API Endpoints ---
+module.exports = async (req, res) => {
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
-// 1. Emotion Analysis Endpoint
-app.post('/api/analyze', async (req, res) => {
+  // Handle OPTIONS request
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   try {
     const { userText, userName } = req.body;
     if (!userText) return res.status(400).json({ error: 'userText is required' });
@@ -111,70 +118,4 @@ app.post('/api/analyze', async (req, res) => {
     console.error('Error in /api/analyze:', error);
     res.status(500).json({ error: 'Failed to get response from AI.' });
   }
-});
-
-// 2. Chat Conversation Endpoint
-app.post('/api/chat', async (req, res) => {
-    try {
-        const { userMessage, chatHistory = [], language = 'ko' } = req.body;
-        if (!userMessage) return res.status(400).json({ error: 'userMessage is required' });
-        if (!OPENAI_API_KEY) return res.status(500).json({ error: 'Server configuration error.' });
-
-        const systemMessage = {
-            role: "system",
-            content: language === 'ko'
-                ? "너는 친구처럼 편하게 대화하는 감정 코치야. 반말로 대화하고, 공감하며 구체적인 조언을 해줘. 2-3문장으로 간결하게 답해줘."
-                : "You are an empathetic friend and emotional coach. Speak warmly and provide specific advice. Keep responses to 2-3 sentences."
-        };
-        const historyMessages = chatHistory.map(msg => ({
-            role: msg.role === 'user' ? 'user' : 'assistant',
-            content: msg.text
-        }));
-        const newUserMessage = { role: "user", content: userMessage };
-        const messages = [systemMessage, ...historyMessages, newUserMessage];
-
-        const completion = await openai.chat.completions.create({
-            model: MODEL,
-            messages,
-            temperature: 0.8,
-            max_tokens: 300,
-        });
-        res.status(200).json({ response: completion.choices[0].message.content });
-    } catch (error) {
-        console.error('Error in /api/chat:', error);
-        res.status(500).json({ error: 'Failed to get response from AI.' });
-    }
-});
-
-// 3. Chat Summary Endpoint
-app.post('/api/summarize', async (req, res) => {
-    try {
-        const { chatHistory = [], language = 'ko' } = req.body;
-        if (chatHistory.length === 0) return res.status(200).json({ summary: language === 'ko' ? '빈 대화' : 'Empty chat' });
-        if (!OPENAI_API_KEY) return res.status(500).json({ error: 'Server configuration error.' });
-
-        const conversationText = chatHistory.slice(0, 10).map(msg => `${msg.role === 'user' ? 'User' : 'AI'}: ${msg.text}`).join('\n');
-        const systemMessage = {
-            role: "system",
-            content: language === 'ko'
-                ? "다음 대화를 3-5단어로 요약해줘. 명사형으로 간단하게만. 예: '학교 친구 관계 고민', '진로 선택 고민'"
-                : "Summarize this conversation in 3-5 words. Use noun phrases only. Example: 'School friendship issue', 'Career choice concern'"
-        };
-        const userMessage = { role: "user", content: conversationText };
-
-        const completion = await openai.chat.completions.create({
-            model: MODEL,
-            messages: [systemMessage, userMessage],
-            temperature: 0.5,
-            max_tokens: 50,
-        });
-        res.status(200).json({ summary: completion.choices[0].message.content.trim() });
-    } catch (error) {
-        console.error('Error in /api/summarize:', error);
-        const firstUserMessage = chatHistory.find(msg => msg.role === 'user')?.text || '';
-        const fallbackSummary = firstUserMessage.length > 30 ? firstUserMessage.substring(0, 30) + '...' : firstUserMessage;
-        res.status(200).json({ summary: fallbackSummary || (language === 'ko' ? '대화 기록' : 'Chat history') });
-    }
-});
-
-module.exports = app;
+};

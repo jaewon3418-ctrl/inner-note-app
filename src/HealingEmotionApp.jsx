@@ -26,7 +26,6 @@ import {
     AppState,
     Keyboard,
 } from 'react-native';
-import LottieView from 'lottie-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -77,7 +76,9 @@ import UpdatePrompt from './components/UpdatePrompt';
 import analytics from './utils/analytics';
 import * as StoreReview from 'expo-store-review';
 import { requestTrackingPermissionsAsync } from 'expo-tracking-transparency';
-import { Settings } from 'react-native-fbsdk-next';
+// import { Settings } from 'react-native-fbsdk-next';
+import SettingsTab from './components/SettingsTab';
+
 
 const { width, height } = Dimensions.get('window');
 
@@ -919,6 +920,44 @@ export default function App() {
         }, 300);
     }, [emotionHistory, savedChatSessions, streak, recoveryTokens, dailyAnonymousCount, lastDiaryDate, completedActivities]);
 
+    const handleAppLockToggle = useCallback(async () => {
+        try {
+            if (!appLockEnabled) {
+                const hasHardware = await LocalAuthentication.hasHardwareAsync();
+                const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+                if (!hasHardware) {
+                    Alert.alert(translate('appLock'), translate('noHardware'));
+                    return;
+                }
+                if (!isEnrolled) {
+                    Alert.alert(translate('appLock'), translate('notEnrolled'));
+                    return;
+                }
+                const result = await LocalAuthentication.authenticateAsync({
+                    promptMessage: translate('appLockSetPrompt'),
+                    cancelLabel: translate('cancel'),
+                });
+                if (result.success) {
+                    await SecureStore.setItemAsync('appLockEnabled', 'true');
+                    setAppLockEnabled(true);
+                    showToastMessage(translate('appLockEnabled'));
+                }
+            } else {
+                const result = await LocalAuthentication.authenticateAsync({
+                    promptMessage: translate('appLockDisablePrompt'),
+                    cancelLabel: translate('cancel'),
+                });
+                if (result.success) {
+                    await SecureStore.deleteItemAsync('appLockEnabled');
+                    setAppLockEnabled(false);
+                    showToastMessage(translate('appLockDisabled'));
+                }
+            }
+        } catch (error) {
+            Alert.alert(translate('confirm'), translate('authError'));
+        }
+    }, [appLockEnabled, translate, showToastMessage]);
+
     useEffect(() => {
         saveData();
         // 메모리 누수 방지: 컴포넌트 언마운트 시 타임아웃 정리
@@ -1709,21 +1748,29 @@ export default function App() {
         analytics.logAppOpen();
 
         // iOS 14+ 추적 권한 요청 (Facebook SDK)
+        /*
         const initFacebookSDK = async () => {
             try {
-                if (Platform.OS === 'ios') {
-                    const { status } = await requestTrackingPermissionsAsync();
-                    await Settings.initializeSDK();
-                    Settings.setAdvertiserTrackingEnabled(status === 'granted');
+                const { Settings } = require('react-native-fbsdk-next');
+                if (Settings && typeof Settings.initializeSDK === 'function') {
+                    if (Platform.OS === 'ios') {
+                        const { status } = await requestTrackingPermissionsAsync();
+                        await Settings.initializeSDK();
+                        if (status === 'granted') {
+                            Settings.setAdvertiserTrackingEnabled(true);
+                        }
+                    } else {
+                        await Settings.initializeSDK();
+                    }
                 } else {
-                    await Settings.initializeSDK();
+                    console.warn('Facebook SDK Settings module not found, skipping initialization.');
                 }
             } catch (error) {
                 console.log('Facebook SDK init error:', error);
             }
         };
         initFacebookSDK();
-
+        */
         loadData();
         startAnimations();
         purgeTrash();
@@ -2948,473 +2995,7 @@ export default function App() {
         );
     };
 
-    // 설정 탭 (대폭 개선)
-    const renderSettingsTab = () => (
-        <ScrollView
-            keyboardShouldPersistTaps="never"
-            style={styles.tabContent}
-            showsVerticalScrollIndicator={false}
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-            onTouchStart={Keyboard.dismiss}
-            onScrollBeginDrag={Keyboard.dismiss}
-            contentContainerStyle={{
-                paddingTop: 20,
-                paddingBottom: 120,
-                paddingHorizontal: 20,
-                alignItems: 'center'
-            }}
-        >
-            <View style={styles.newHomeHeader}>
-                <Text style={[styles.newHomeGreeting, { fontSize: 28, fontWeight: '200' }]}>{translate('settings')}</Text>
-            </View>
 
-            {/* 앱 설정 */}
-            <Animated.View style={[{
-                width: '100%',
-                backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                borderRadius: 16,
-                marginBottom: 16,
-                overflow: 'hidden',
-                borderWidth: 1,
-                borderColor: 'rgba(255, 255, 255, 0.06)'
-            }, { opacity: cardFadeAnim }]}>
-                <View style={{ padding: 20 }}>
-                <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 12, fontWeight: '500', marginBottom: 16, letterSpacing: 0.5, textTransform: 'uppercase' }}>{translate('appSettings')}</Text>
-
-                <View style={styles.settingRowVertical}>
-                    <View style={styles.settingInfo}>
-                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                            <Ionicons name="language-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
-                        </View>
-                        <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('language')}</Text>
-                    </View>
-                    <View style={styles.languageOptions}>
-                        <TouchableOpacity
-                            style={[
-                                styles.languageOption,
-                                language === 'ko' && styles.activeOption,
-                            ]}
-                            onPress={() => setLanguage('ko')}
-                        >
-                            {language === 'ko' && (
-                                <Ionicons name="checkmark-circle" size={16} color="#C9A962" />
-                            )}
-                            <Text style={[
-                                styles.languageText,
-                                language === 'ko' && styles.activeText,
-                            ]}>
-                                한국어
-                            </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[
-                                styles.languageOption,
-                                language === 'en' && styles.activeOption,
-                            ]}
-                            onPress={() => setLanguage('en')}
-                        >
-                            {language === 'en' && (
-                                <Ionicons name="checkmark-circle" size={16} color="#C9A962" />
-                            )}
-                            <Text style={[
-                                styles.languageText,
-                                language === 'en' && styles.activeText,
-                            ]}>
-                                English
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
-
-                <TouchableOpacity
-                    style={styles.settingRowButton}
-                    onPress={() => {
-                        setTempNameInput(userName);
-                        setShowNameChangeModal(true);
-                    }}
-                >
-                    <View style={styles.settingInfo}>
-                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                            <Ionicons name="person-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
-                        </View>
-                        <View>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>
-                                {language === 'ko' ? '이름 변경' : 'Change Name'}
-                            </Text>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>
-                                {userName || (language === 'ko' ? '설정되지 않음' : 'Not set')}
-                            </Text>
-                        </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
-                </TouchableOpacity>
-
-                </View>
-            </Animated.View>
-
-            {/* 데이터 관리 */}
-            <Animated.View style={[{
-                width: '100%',
-                backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                borderRadius: 16,
-                marginBottom: 16,
-                overflow: 'hidden',
-                borderWidth: 1,
-                borderColor: 'rgba(255, 255, 255, 0.06)'
-            }, { opacity: cardFadeAnim }]}>
-                <View style={{ padding: 20 }}>
-                <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 12, fontWeight: '500', marginBottom: 16, letterSpacing: 0.5, textTransform: 'uppercase' }}>{translate('dataManagement')}</Text>
-
-                <TouchableOpacity
-                    style={styles.settingRowButton}
-                    onPress={exportSecureBackup}
-                >
-                    <View style={styles.settingInfo}>
-                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                            <Ionicons name="cloud-upload-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
-                        </View>
-                        <View>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('dataBackup')}</Text>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('fileExport')}</Text>
-                        </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
-                </TouchableOpacity>
-
-                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
-
-                <TouchableOpacity
-                    style={styles.settingRowButton}
-                    onPress={() => importSecureBackup()}
-                >
-                    <View style={styles.settingInfo}>
-                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                            <Ionicons name="cloud-download-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
-                        </View>
-                        <View>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('dataRestore')}</Text>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('fileImport')}</Text>
-                        </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
-                </TouchableOpacity>
-
-                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
-
-                <TouchableOpacity
-                    style={styles.settingRowButton}
-                    onPress={async () => {
-                        try {
-                            const userData = await exportUserData();
-
-                            const dataStr = JSON.stringify(userData, null, 2);
-                            const uri = FileSystem.documentDirectory + `my-emotion-data-${new Date().toISOString().slice(0,10)}.json`;
-                            await FileSystem.writeAsStringAsync(uri, dataStr, { encoding: FileSystem.EncodingType.UTF8 });
-
-                            if (await Sharing.isAvailableAsync()) {
-                                await Sharing.shareAsync(uri, {
-                                    mimeType: 'application/json',
-                                    dialogTitle: '내 감정 데이터 내보내기',
-                                });
-                            }
-                            showToastMessage(language === 'ko' ? '데이터 내보내기 완료' : 'Data export completed');
-                        } catch (error) {
-                            Alert.alert(
-                                language === 'ko' ? '오류' : 'Error',
-                                language === 'ko' ? '데이터 내보내기 중 오류가 났어' : 'An error occurred during data export.'
-                            );
-                        }
-                    }}
-                >
-                    <View style={styles.settingInfo}>
-                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                            <Ionicons name="download-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
-                        </View>
-                        <View>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('exportMyData')}</Text>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('dataPortabilityDesc')}</Text>
-                        </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
-                </TouchableOpacity>
-
-                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
-
-                <TouchableOpacity
-                    style={styles.settingRowButton}
-                    onPress={() => {
-                        Alert.alert(
-                            language === 'ko' ? '동의 철회' : 'Revoke Consent',
-                            language === 'ko'
-                                ? '⚠️ 주의사항\n\n• OpenAI 데이터 전송 동의를 철회해\n• AI 감정 분석 기능을 사용할 수 없어\n• 기존 감정 기록은 유지돼\n• 언제든 다시 동의할 수 있어\n\n정말 철회할까?'
-                                : '⚠️ Warning\n\n• OpenAI data transfer consent will be revoked\n• AI emotion analysis will be unavailable\n• Existing records will be kept\n• You can re-consent anytime\n\nAre you sure?',
-                            [
-                                { text: language === 'ko' ? '취소' : 'Cancel', style: 'cancel' },
-                                {
-                                    text: language === 'ko' ? '철회' : 'Revoke',
-                                    style: 'destructive',
-                                    onPress: async () => {
-                                        try {
-                                            await revokeConsent();
-
-                                            // 동의 상태만 변경, 데이터는 유지
-                                            setHasUserConsent(false);
-
-                                            // 안내 메시지
-                                            Alert.alert(
-                                                language === 'ko' ? '동의 철회 완료' : 'Consent Revoked',
-                                                language === 'ko'
-                                                    ? '개인정보 처리 동의가 철회됐어.\n\n• 기존 감정 기록은 안전하게 보관돼\n• AI 기능 사용 시 다시 동의를 요청해\n• 설정에서 언제든 재동의할 수 있어'
-                                                    : 'Privacy consent has been revoked.\n\n• Existing records are safely stored\n• Re-consent will be requested when using AI\n• You can re-consent in settings anytime',
-                                                [{ text: language === 'ko' ? '확인' : 'OK', style: 'default' }]
-                                            );
-
-                                            showToastMessage(language === 'ko' ? '동의가 철회됐어 (데이터는 보존돼)' : 'Consent revoked (data preserved)');
-                                        } catch (error) {
-                                            Alert.alert(
-                                                language === 'ko' ? '오류' : 'Error',
-                                                language === 'ko' ? '동의 철회 중 오류가 났어' : 'An error occurred while revoking consent.'
-                                            );
-                                        }
-                                    }
-                                }
-                            ]
-                        );
-                    }}
-                >
-                    <View style={styles.settingInfo}>
-                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(201, 169, 98, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                            <Ionicons name="shield-checkmark-outline" size={18} color="#C9A962" />
-                        </View>
-                        <View>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('privacyConsentManagement')}</Text>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>
-                                {hasUserConsent ? translate('revokeConsent') : translate('reAgree')}
-                            </Text>
-                        </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
-                </TouchableOpacity>
-
-                {/* 동의하지 않은 상태에서 다시 동의하기 버튼 */}
-                {!hasUserConsent && (
-                    <>
-                        <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
-                        <TouchableOpacity
-                            style={styles.settingRowButton}
-                            onPress={() => {
-                                setShowConsentScreen(true);
-                            }}
-                        >
-                            <View style={styles.settingInfo}>
-                                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(74, 222, 128, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                                    <Ionicons name="checkmark-circle-outline" size={18} color="#4ADE80" />
-                                </View>
-                                <View>
-                                    <Text style={{ color: '#4ADE80', fontSize: 15, fontWeight: '400' }}>개인정보 처리 재동의</Text>
-                                    <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>AI 감정 분석 기능 사용하기</Text>
-                                </View>
-                            </View>
-                            <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
-                        </TouchableOpacity>
-                    </>
-                )}
-
-                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
-
-                <TouchableOpacity
-                    style={styles.settingRowButton}
-                    onPress={() => {
-                        Alert.alert(
-                            translate('deleteAllDataTitle'),
-                            translate('deleteAllDataWarning'),
-                            [
-                                { text: translate('cancel'), style: 'cancel' },
-                                {
-                                    text: translate('deleteComplete'),
-                                    style: 'destructive',
-                                    onPress: resetAllData
-                                }
-                            ]
-                        );
-                    }}
-                >
-                    <View style={styles.settingInfo}>
-                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(239, 68, 68, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                            <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                        </View>
-                        <View>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('deleteAllData')}</Text>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('deleteAllDataDesc')}</Text>
-                        </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
-                </TouchableOpacity>
-
-                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
-
-                <TouchableOpacity
-                    style={styles.settingRowButton}
-                    onPress={async () => {
-                        try {
-                            if (!appLockEnabled) {
-                                // 켜기 플로우
-                                const hasHardware = await LocalAuthentication.hasHardwareAsync();
-                                const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-
-                                if (!hasHardware) {
-                                    Alert.alert(translate('appLock'), translate('noHardware'));
-                                    return;
-                                }
-
-                                if (!isEnrolled) {
-                                    Alert.alert(translate('appLock'), translate('notEnrolled'));
-                                    return;
-                                }
-
-                                const result = await LocalAuthentication.authenticateAsync({
-                                    promptMessage: translate('appLockSetPrompt'),
-                                    cancelLabel: translate('cancel'),
-                                });
-
-                                if (result.success) {
-                                    await SecureStore.setItemAsync('appLockEnabled', 'true');
-                                    setAppLockEnabled(true);
-                                    showToastMessage(translate('appLockEnabled'));
-                                }
-                            } else {
-                                // 끄기 플로우
-                                const result = await LocalAuthentication.authenticateAsync({
-                                    promptMessage: translate('appLockDisablePrompt'),
-                                    cancelLabel: translate('cancel'),
-                                });
-
-                                if (result.success) {
-                                    await SecureStore.deleteItemAsync('appLockEnabled');
-                                    setAppLockEnabled(false);
-                                    showToastMessage(translate('appLockDisabled'));
-                                }
-                            }
-                        } catch (error) {
-                            Alert.alert(translate('confirm'), translate('authError'));
-                        }
-                    }}
-                >
-                    <View style={styles.settingInfo}>
-                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                            <Ionicons name="finger-print-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
-                        </View>
-                        <View>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('appLock')}</Text>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{appLockEnabled ? translate('appLockOn') : translate('appLockOff')}</Text>
-                        </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
-                </TouchableOpacity>
-                </View>
-            </Animated.View>
-
-            {/* 도움 및 지원 */}
-            <Animated.View style={[{
-                width: '100%',
-                backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                borderRadius: 16,
-                marginBottom: 16,
-                overflow: 'hidden',
-                borderWidth: 1,
-                borderColor: 'rgba(255, 255, 255, 0.06)'
-            }, { opacity: cardFadeAnim }]}>
-                <View style={{ padding: 20 }}>
-                <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 12, fontWeight: '500', marginBottom: 16, letterSpacing: 0.5, textTransform: 'uppercase' }}>{translate('helpSupport')}</Text>
-
-                <TouchableOpacity
-                    style={styles.settingRowButton}
-                    onPress={() => setShowCrisisModal(true)}
-                >
-                    <View style={styles.settingInfo}>
-                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(201, 169, 98, 0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                            <Ionicons name="heart-outline" size={18} color="#C9A962" />
-                        </View>
-                        <View>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('crisisSupport')}</Text>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('crisisHelpline')}</Text>
-                        </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
-                </TouchableOpacity>
-
-                <View style={{ height: 1, backgroundColor: 'rgba(255, 255, 255, 0.06)', marginVertical: 12 }} />
-
-                <TouchableOpacity style={styles.settingRowButton} onPress={() => openSafeURL('mailto:jaewon3418@gmail.com', '메일 앱을 열 수 없어. 직접 jaewon3418@gmail.com로 연락해줘!')}>
-                    <View style={styles.settingInfo}>
-                        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255, 255, 255, 0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                            <Ionicons name="mail-outline" size={18} color="rgba(255, 255, 255, 0.6)" />
-                        </View>
-                        <View>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15, fontWeight: '400' }}>{translate('contactUs')}</Text>
-                            <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 13, fontWeight: '400', marginTop: 2 }}>{translate('feedbackRequest')}</Text>
-                        </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.3)" />
-                </TouchableOpacity>
-                </View>
-            </Animated.View>
-
-            {/* 법적 정보 */}
-            <Animated.View style={[{ width: '100%', marginBottom: 40, paddingTop: 24 }, { opacity: cardFadeAnim }]}>
-                <Text style={{ color: 'rgba(255, 255, 255, 0.35)', fontSize: 12, fontWeight: '400', textAlign: 'center', lineHeight: 18, marginBottom: 20, paddingHorizontal: 20 }}>{translate('crisisDisclaimer')}</Text>
-
-                <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 8 }}>
-                    <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 8 }}
-                        onPress={() => Alert.alert(
-                            translate('privacyPolicyTitle'),
-                            translate('privacyPolicyContent'),
-                            [{ text: language === 'ko' ? '확인' : 'OK', style: 'default' }]
-                        )}
-                    >
-                        <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 12, fontWeight: '400' }}>{translate('privacyPolicyTitle')}</Text>
-                    </TouchableOpacity>
-
-                    <Text style={{ color: 'rgba(255, 255, 255, 0.2)', fontSize: 12 }}>·</Text>
-
-                    <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 8 }}
-                        onPress={() => Alert.alert(
-                            translate('termsTitle'),
-                            translate('termsContent'),
-                            [{ text: language === 'ko' ? '확인' : 'OK', style: 'default' }]
-                        )}
-                    >
-                        <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 12, fontWeight: '400' }}>{translate('termsTitle')}</Text>
-                    </TouchableOpacity>
-
-                    <Text style={{ color: 'rgba(255, 255, 255, 0.2)', fontSize: 12 }}>·</Text>
-
-                    <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 8 }}
-                        onPress={() => Alert.alert(
-                            '⚠️ 모든 데이터 삭제',
-                            '동의 상태를 포함한 모든 데이터를 삭제해서 최초 실행 상태로 돌아가.\n\n이 작업은 되돌릴 수 없어!',
-                            [
-                                { text: translate('cancel'), style: 'cancel' },
-                                {
-                                    text: '완전 삭제',
-                                    style: 'destructive',
-                                    onPress: resetAllData
-                                }
-                            ]
-                        )}
-                    >
-                        <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 12, fontWeight: '400' }}>{translate('deleteAccount')}</Text>
-                    </TouchableOpacity>
-                </View>
-            </Animated.View>
-        </ScrollView>
-    );
 
     // 초기화 중일 때 로딩 화면
     if (isInitializing) {
@@ -3818,7 +3399,30 @@ export default function App() {
                         {currentTab === 'home' && renderHomeTab()}
                         {currentTab === 'history' && renderHistoryTab()}
                         {currentTab === 'insights' && renderInsightsTab()}
-                        {currentTab === 'settings' && renderSettingsTab()}
+                        {currentTab === 'settings' && (
+                            <SettingsTab
+                                styles={styles}
+                                translate={translate}
+                                cardFadeAnim={cardFadeAnim}
+                                language={language}
+                                setLanguage={setLanguage}
+                                userName={userName}
+                                setTempNameInput={setTempNameInput}
+                                setShowNameChangeModal={setShowNameChangeModal}
+                                exportSecureBackup={exportSecureBackup}
+                                importSecureBackup={importSecureBackup}
+                                exportUserData={exportUserData}
+                                showToastMessage={showToastMessage}
+                                hasUserConsent={hasUserConsent}
+                                revokeConsent={revokeConsent}
+                                setShowConsentScreen={setShowConsentScreen}
+                                resetAllData={resetAllData}
+                                appLockEnabled={appLockEnabled}
+                                handleAppLockToggle={handleAppLockToggle}
+                                setShowCrisisModal={setShowCrisisModal}
+                                openSafeURL={openSafeURL}
+                            />
+                        )}
                     </Animated.View>
                 </KeyboardAvoidingView>
 

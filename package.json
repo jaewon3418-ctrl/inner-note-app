@@ -10,7 +10,7 @@
     "build:ait": "ait build",
     "build:apps-in-toss": "npx ait build",
     "dev": "granite dev",
-    "build": "granite build",
+    "build": "echo 'No build needed for API deployment'",
     "deploy": "ait deploy"
   },
   "dependencies": {
@@ -32,7 +32,6 @@
     "expo-blur": "~14.1.5",
     "expo-clipboard": "^7.1.5",
     "expo-constants": "~17.1.7",
-    "expo-crypto": "^14.1.5",
     "expo-dev-client": "~5.2.4",
     "expo-device": "~7.1.4",
     "expo-file-system": "~18.1.11",

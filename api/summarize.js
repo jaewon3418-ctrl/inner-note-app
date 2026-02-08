@@ -34,8 +34,8 @@ module.exports = async (req, res) => {
     const systemMessage = {
       role: "system",
       content: language === 'ko'
-        ? "다음 대화를 3-5단어로 요약해줘. 명사형으로 간단하게만. 예: '학교 친구 관계 고민', '진로 선택 고민'"
-        : "Summarize this conversation in 3-5 words. Use noun phrases only. Example: 'School friendship issue', 'Career choice concern'"
+        ? "다음 대화를 3-5단어 명사형으로 요약. 감정이 아니라 상황을 중심으로. 예: '면접 전날 긴장', '친구와 다툰 후회', '야근 후 번아웃'. 따옴표 없이 텍스트만 출력."
+        : "Summarize in 3-5 words as a noun phrase. Focus on situation, not emotion. Example: 'Pre-interview nerves', 'Regret after friend argument', 'Burnout from overtime'. Output text only, no quotes."
     };
     const userMessage = { role: "user", content: conversationText };
 

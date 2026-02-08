@@ -1,7 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import * as Crypto from 'expo-crypto';
-import CryptoJS from 'crypto-js'; // CryptoJS import
+import CryptoJS from 'crypto-js';
 
 const ENCRYPTION_KEY_ID = 'healingemotion_encryption_key';
 const ENCRYPTED_DATA_PREFIX = 'encrypted:';
@@ -12,19 +11,18 @@ async function getOrCreateSecureKey() {
     try {
         let key = await SecureStore.getItemAsync(ENCRYPTION_KEY_ID);
         if (!key) {
-            // 256비트(32바이트) 랜덤 키 생성
-            const randomBytes = await Crypto.getRandomBytesAsync(32);
-            key = Array.from(randomBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+            // expo-crypto 대신 crypto-js를 사용하여 랜덤 키 생성 (Native 모듈 의존성 제거)
+            const randomWord = CryptoJS.lib.WordArray.random(32); // 256비트(32바이트)
+            key = randomWord.toString(CryptoJS.enc.Hex);
             
             await SecureStore.setItemAsync(ENCRYPTION_KEY_ID, key);
         }
         return key;
     } catch (error) {
         console.error('Encryption key error:', error);
-        // 오류 시 기본 키 사용 (fallback) - 실제 앱에서는 절대 이렇게 하면 안 됨!
-        // 이 부분은 개발/테스트용이며, 실제 배포 시에는 앱이 작동하지 않도록 해야 함.
+        // 오류 시 기본 키 사용 (개발/테스트용)
         console.warn('Using fallback encryption key - THIS IS INSECURE FOR PRODUCTION');
-        return 'a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1'; // 256-bit hex key
+        return 'a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1'; 
     }
 }
 
@@ -37,7 +35,7 @@ async function aesEncrypt(data, key) {
             mode: CryptoJS.mode.CBC,
             padding: CryptoJS.pad.Pkcs7
         });
-        // IV와 암호문을 함께 저장 (IV는 Base64로 인코딩)
+        // IV와 암호문을 함께 저장
         return iv.toString(CryptoJS.enc.Hex) + ':' + encrypted.toString();
     } catch (error) {
         console.error('AES Encryption error:', error);
@@ -66,10 +64,8 @@ async function aesDecrypt(encryptedCombined, key) {
     }
 }
 
-// 간단한 XOR 암호화 (하위 호환성용)
+// 간단한 XOR 암호화 (하위 호환성용 - 유지)
 function simpleEncrypt(data, key) {
-    // 이 함수는 더 이상 사용되지 않지만, 하위 호환성을 위해 남겨둠
-    // 실제로는 AES로 전환 후 이 함수는 삭제하는 것이 좋음
     try {
         const keyBytes = [];
         if (key.length >= 32) {
@@ -101,7 +97,6 @@ function simpleEncrypt(data, key) {
 }
 
 function simpleDecrypt(encryptedHex, key) {
-    // 이 함수는 더 이상 사용되지 않지만, 하위 호환성을 위해 남겨둠
     try {
         if (!encryptedHex.match(/^[0-9a-f]+$/i)) {
             return atob(encryptedHex); // Fallback from base64
@@ -151,7 +146,6 @@ function simpleDecrypt(encryptedHex, key) {
     }
 }
 
-
 // 암호화하여 저장
 export async function saveEncryptedData(key, data) {
     try {
@@ -161,21 +155,17 @@ export async function saveEncryptedData(key, data) {
         
         const encrypted = await aesEncrypt(jsonString, encryptionKey);
         
-        // 버전 정보를 포함하여 저장
         await AsyncStorage.setItem(key, `${ENCRYPTED_DATA_PREFIX}${ENCRYPTION_VERSION}:${encrypted}`);
         return true;
     } catch (error) {
         console.error('Save encrypted data error:', error);
-        // AES 암호화 실패 시, 기존 XOR 방식으로 저장 시도 (하위 호환성)
         try {
             const encryptionKey = await getOrCreateSecureKey();
             const jsonString = JSON.stringify(data || []);
-            const encrypted = simpleEncrypt(jsonString, encryptionKey); // 기존 XOR
+            const encrypted = simpleEncrypt(jsonString, encryptionKey);
             await AsyncStorage.setItem(key, `${ENCRYPTED_DATA_PREFIX}xor-v1:${encrypted}`);
-            console.warn('Fallback to XOR encryption due to AES failure.');
-            return false; // AES 실패했으므로 false 반환
+            return false;
         } catch (fallbackError) {
-            console.error('Even XOR fallback storage failed:', fallbackError);
             return false;
         }
     }
@@ -197,32 +187,24 @@ export async function loadEncryptedData(key) {
             if (parts[0] === ENCRYPTION_VERSION) { // AES-v1
                 const encryptedCombined = parts.slice(1).join(':');
                 decrypted = await aesDecrypt(encryptedCombined, encryptionKey);
-            } else if (parts[0] === 'xor-v1') { // 기존 XOR 방식 (하위 호환성)
+            } else if (parts[0] === 'xor-v1') { // 기존 XOR
                 const encryptedXOR = parts.slice(1).join(':');
                 decrypted = simpleDecrypt(encryptedXOR, encryptionKey);
             } else {
-                // 버전 정보가 없거나 알 수 없는 경우 (오래된 데이터 또는 손상)
-                console.warn('Unknown encryption version or format, attempting XOR fallback.');
-                decrypted = simpleDecrypt(payload, encryptionKey); // 전체 페이로드를 XOR로 시도
+                decrypted = simpleDecrypt(payload, encryptionKey);
             }
 
-            if (!decrypted || typeof decrypted !== 'string') {
-                console.warn('Decryption returned invalid data, falling back to empty array');
-                return [];
-            }
+            if (!decrypted || typeof decrypted !== 'string') return [];
             
             try {
                 return JSON.parse(decrypted);
             } catch (parseError) {
-                console.warn('JSON parse failed after decryption, falling back to empty array:', parseError);
                 return [];
             }
         } else {
-            // 기존 평문 데이터 (하위 호환성)
             try {
                 return JSON.parse(stored);
             } catch (parseError) {
-                console.warn('JSON parse failed for plain text data:', parseError);
                 return [];
             }
         }
@@ -237,11 +219,8 @@ export async function checkUserConsent() {
     try {
         const consentData = await AsyncStorage.getItem('user_consent');
         if (!consentData) return null;
-        
-        const consent = JSON.parse(consentData);
-        return consent;
+        return JSON.parse(consentData);
     } catch (error) {
-        console.error('Check consent error:', error);
         return null;
     }
 }
@@ -258,7 +237,6 @@ export async function revokeConsent() {
         await AsyncStorage.removeItem('user_consent');
         return true;
     } catch (error) {
-        console.error('Revoke consent error:', error);
         return false;
     }
 }
@@ -282,7 +260,6 @@ export async function deleteAllEncryptedData() {
         await AsyncStorage.multiRemove(keysToDelete);
         return true;
     } catch (error) {
-        console.error('Delete all data error:', error);
         return false;
     }
 }
@@ -309,7 +286,6 @@ export async function exportUserData() {
 
         return exportData;
     } catch (error) {
-        console.error('Export data error:', error);
         throw error;
     }
 }

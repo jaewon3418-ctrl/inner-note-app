@@ -13,9 +13,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { hapticSuccess, safeHapticImpact } from '../utils/safeHaptics';
+import useAppStore from '../store';
 
-const ConsentScreen = ({ onConsentGranted, onLanguageChange, language: initialLanguage = 'ko' }) => {
-    const [language, setLanguage] = useState(initialLanguage);
+const ConsentScreen = ({ onConsentGranted }) => {
+    const language = useAppStore(s => s.language);
+    const setLanguage = useAppStore(s => s.setLanguage);
     const [agreedItems, setAgreedItems] = useState({
         dataCollection: false,
         thirdPartySharing: false,
@@ -101,9 +103,6 @@ const ConsentScreen = ({ onConsentGranted, onLanguageChange, language: initialLa
         const newLanguage = language === 'ko' ? 'en' : 'ko';
         setLanguage(newLanguage);
         await AsyncStorage.setItem('selectedLanguage', newLanguage);
-        if (onLanguageChange) {
-            onLanguageChange(newLanguage);
-        }
         safeHapticImpact('Light');
     };
 

@@ -35,7 +35,10 @@ const APP_STORE_ID = '6751752636';
 const APP_STORE_URL = `https://apps.apple.com/app/id${APP_STORE_ID}`;
 const PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=com.wodnjs3418.TestApp`;
 
-const UpdatePrompt = ({ language = 'ko' }) => {
+import useAppStore from '../store';
+
+const UpdatePrompt = () => {
+    const language = useAppStore(s => s.language);
     const [visible, setVisible] = useState(false);
     const [latestVersion, setLatestVersion] = useState(null);
     const fadeAnim = useRef(new Animated.Value(0)).current;

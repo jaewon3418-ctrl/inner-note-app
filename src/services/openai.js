@@ -2,7 +2,7 @@
 
 // IMPORTANT: Deploy your Vercel project and put the URL here.
 // It should look like 'https://your-project-name.vercel.app'
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://your-deeplog-proxy.vercel.app';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://inner-note-app-fq1a.vercel.app';
 
 // Generic fetch function to handle API calls to our proxy
 async function fetchFromProxy(endpoint, body) {
